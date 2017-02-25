@@ -30,6 +30,7 @@
 #include <list>
 #include <chrono>
 #include <ctime>
+#include <string>
 
 struct LatencyBin {
     LatencyBin() : latSum(0), latNum(0) { }
