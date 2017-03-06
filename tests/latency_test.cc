@@ -5,10 +5,10 @@
 #include "latency.h"
 
 struct test_args {
-    LatencyEst* lat;
+    LatencyCollector* lat;
 };
 
-LatencyEst *global_lat;
+LatencyCollector *global_lat;
 
 void* insert_thread(void *voidargs)
 {
@@ -27,14 +27,14 @@ void* insert_thread(void *voidargs)
 }
 
 int MT_basic_insert_test() {
-    global_lat = new LatencyEst();
+    global_lat = new LatencyCollector();
 
     size_t i;
     size_t n_threads = 8;
 
     std::vector<std::thread> t_hdl(n_threads);
     test_args args;
-    LatencyEst lat;
+    LatencyCollector lat;
 
     for (i=0; i<n_threads; ++i) {
         args.lat = &lat;
@@ -70,7 +70,7 @@ void test_function_3ms() {
 }
 
 int latency_macro_test() {
-    global_lat = new LatencyEst();
+    global_lat = new LatencyCollector();
 
     size_t i, j;
     std::vector<size_t> n_calls = {53, 47, 17};

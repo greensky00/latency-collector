@@ -27,7 +27,6 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <atomic>
-#include <list>
 #include <chrono>
 #include <ctime>
 #include <string>
@@ -182,12 +181,13 @@ private:
 };
 
 
-class LatencyEst {
+class LatencyCollector {
 public:
-    LatencyEst() : gcInProgress(false) {
+    LatencyCollector() : gcInProgress(false) {
         latestMap.store(new MapWrapper(), std::memory_order_relaxed);
     }
-    ~LatencyEst() {
+
+    ~LatencyCollector() {
         MapWrapper *prev = nullptr;
 
         MapWrapper *cursor = latestMap.load();
@@ -356,9 +356,9 @@ private:
 };
 
 
-struct LatencyCollector {
-    LatencyCollector(LatencyEst *_lat,
-                     std::string _func_name) {
+struct LatencyCollectWrapper {
+    LatencyCollectWrapper(LatencyCollector *_lat,
+                          std::string _func_name) {
         lat = _lat;
         if (lat) {
             start = std::chrono::system_clock::now();
@@ -366,7 +366,7 @@ struct LatencyCollector {
         }
     }
 
-    ~LatencyCollector() {
+    ~LatencyCollectWrapper() {
         if (lat) {
             std::chrono::time_point<std::chrono::system_clock> end;
             end = std::chrono::system_clock::now();
@@ -378,13 +378,13 @@ struct LatencyCollector {
     }
 
     std::string functionName;
-    LatencyEst *lat;
+    LatencyCollector *lat;
     std::chrono::time_point<std::chrono::system_clock> start;
 };
 
 #define collectFuncLatency(lat) \
-        LatencyCollector __func_latency__((lat), __func__)
+        LatencyCollectWrapper __func_latency__((lat), __func__)
 
 #define collectBlockLatency(lat, name) \
-        LatencyCollector __block_latency__((lat), name)
+        LatencyCollectWrapper __block_latency__((lat), name)
 
