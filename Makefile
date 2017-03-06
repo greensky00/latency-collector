@@ -10,7 +10,6 @@ CXXFLAGS += -Wall
 LATENCY_TEST = \
 	tests/test_common.o \
 	tests/latency_test.o \
-	src/latency.o \
 
 PROGRAMS = \
 	tests/latency_test \
