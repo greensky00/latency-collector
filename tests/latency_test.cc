@@ -73,7 +73,7 @@ int latency_macro_test() {
     global_lat = new LatencyCollector();
 
     size_t i, j;
-    std::vector<size_t> n_calls = {53, 47, 17};
+    std::vector<size_t> n_calls = {23, 19, 13};
     std::vector<void (*)()> funcs = {test_function_1ms,
                                      test_function_2ms,
                                      test_function_3ms};

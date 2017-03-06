@@ -27,9 +27,11 @@
 #include <stdint.h>
 #include <unordered_map>
 #include <atomic>
+#include <mutex>
 #include <chrono>
 #include <ctime>
 #include <string>
+#include <memory>
 
 struct LatencyBin {
     LatencyBin() : latSum(0), latNum(0) { }
@@ -40,8 +42,10 @@ struct LatencyBin {
 
 class LatencyItem {
 public:
-    LatencyItem(std::string _name) : statName(_name) { }
-    ~LatencyItem() { }
+    LatencyItem(std::string _name) : statName(_name) {
+    }
+    ~LatencyItem() {
+    }
 
     std::string getName() const {
         return statName;
@@ -52,15 +56,15 @@ public:
         bin.latNum.fetch_add(1, std::memory_order_relaxed);
     }
 
-    uint64_t getAvgLatency() {
+    uint64_t getAvgLatency() const {
         return bin.latSum / bin.latNum;
     }
 
-    uint64_t getTotalTime() {
+    uint64_t getTotalTime() const {
         return bin.latSum;
     }
 
-    uint64_t getNumCalls() {
+    uint64_t getNumCalls() const {
         return bin.latNum;
     }
 
@@ -80,62 +84,23 @@ private:
 
 class MapWrapper {
 public:
-    MapWrapper() : refCount(0), invalid(false), prevSnapshot(nullptr)
-    { }
+    MapWrapper() {
+    }
 
     MapWrapper(const MapWrapper &src) {
         copyFrom(src);
     }
 
-    ~MapWrapper() { }
+    ~MapWrapper() {
+    }
 
     size_t getSize() const {
         return map.size();
     }
 
-    MapWrapper* getPrev() const {
-        return const_cast<MapWrapper*>(prevSnapshot);
-    }
-
-    void setPrev(const MapWrapper *prev) {
-        prevSnapshot = prev;
-    }
-
-    void clearPrev() {
-        prevSnapshot = nullptr;
-    }
-
-    void operator=(const MapWrapper &src) {
-        copyFrom(src);
-    }
-
     void copyFrom(const MapWrapper &src) {
         // Make a clone (but the map will point to same LatencyItems)
         map = src.map;
-        refCount.store(0);
-        invalid.store(false);
-        prevSnapshot = nullptr;
-    }
-
-    bool isRemovable() const {
-        return (invalid && refCount == 0);
-    }
-
-    uint64_t incRC() {
-        if (invalid) {
-            return 0;
-        }
-        refCount.fetch_add(1, std::memory_order_relaxed);
-        return refCount;
-    }
-
-    uint64_t decRC() {
-        refCount.fetch_sub(1, std::memory_order_relaxed);
-        return refCount;
-    }
-
-    uint64_t getRC() const {
-        return refCount.load();
     }
 
     LatencyItem* addNew(std::string bin_name) {
@@ -153,10 +118,6 @@ public:
         return item;
     }
 
-    void markInvalid() {
-        invalid.store(true);
-    }
-
     std::string dump() {
         std::string str;
         str += "# stats: " + std::to_string(map.size()) + '\n';
@@ -172,61 +133,45 @@ public:
             delete entry.second;
         }
     }
-    std::atomic<uint64_t> refCount;
 
 private:
     std::unordered_map<std::string, LatencyItem*> map;
-    std::atomic<bool> invalid;
-    const MapWrapper *prevSnapshot;
 };
 
+using MapWrapperPtr = std::shared_ptr<MapWrapper>;
+//using MapWrapperPtr = MapWrapper*; // for debugging
 
 class LatencyCollector {
 public:
-    LatencyCollector() : gcInProgress(false) {
-        latestMap.store(new MapWrapper(), std::memory_order_relaxed);
+    LatencyCollector() {
+        latestMap = MapWrapperPtr(new MapWrapper());
     }
 
     ~LatencyCollector() {
-        MapWrapper *prev = nullptr;
-
-        MapWrapper *cursor = latestMap.load();
-        cursor->freeAllItems();
-
-        while (cursor) {
-            prev = cursor->getPrev();
-            delete cursor;
-            cursor = prev;
-        }
+        latestMap->freeAllItems();
     }
 
     size_t getNumItems() const {
-        return latestMap.load()->getSize();
+        return latestMap->getSize();
     }
 
-    // This function MUST be serialized by lock.
     void addStatName(std::string lat_name) {
-        MapWrapper *cur_map = latestMap.load();
+        MapWrapperPtr cur_map = latestMap;
         if (!cur_map->get(lat_name)) {
             cur_map->addNew(lat_name);
         } // Otherwise: already exists.
     }
 
     void addLatency(std::string lat_name, uint64_t lat_value) {
-        MapWrapper *cur_map = nullptr;
+        MapWrapperPtr cur_map = nullptr;
 
         size_t ticks_allowed = 64;
         do {
-            if ( !(cur_map = latestMap.load())->incRC() ) {
-                // Old (invalid) map, retry.
-                continue;
-            }
-
+            cur_map = latestMap;
             LatencyItem *item = cur_map->get(lat_name);
             if (item) {
                 // Found existing latency.
                 item->addLatency(lat_value);
-                cur_map->decRC();
                 return;
             }
 
@@ -235,124 +180,83 @@ public:
             // 2) Replace 'latestMap' pointer atomically.
 
             // Note:
-            // Below insertion process happens only when a new stat
-            // is added. Generally the number of stats is not quite big (<100),
-            // insertions will be finished at the very early stage. Once
-            // all stats are populated in the map, below codes will never be
+            // Below insertion process happens only when a new stat item
+            // is added. Generally the number of stats is not pretty big (<100),
+            // and adding new stats will be finished at the very early stage.
+            // Once all stats are populated in the map, below codes will never be
             // called, and adding new latency will be done in a lock-free manner.
 
             // Copy from the current map.
-            MapWrapper *new_map = new MapWrapper(*cur_map);
+            std::shared_ptr<MapWrapper> new_map(new MapWrapper(*cur_map));
             // Add a new item.
             item = new_map->addNew(lat_name);
             item->addLatency(lat_value);
 
             // Atomic CAS
-            MapWrapper *expected = cur_map;
-            if (latestMap.compare_exchange_strong(expected, new_map)) {
+            //
+            // Note:
+            // * according to C++11 standard, we should be able to use
+            //   `atomic_compare_exchange_...` here, but it is mistakenly
+            //   omitted in stdc++ library. Until it is fixed, we need to use
+            //   mutex.
+            // * load/store shared_ptr is atomic. Don't need to think about
+            //   readers.
+
+            /*
+            // == Original code using atomic operation:
+            std::shared_ptr<MapWrapper> expected = cur_map;
+            if (std::atomic_compare_exchange_strong(
+                        &latestMap, &expected, new_map)) {
                 // Succeeded.
-                cur_map->markInvalid();
-                cur_map->decRC();
-                new_map->setPrev(cur_map);
-                garbageCollect();
                 return;
+            }
+            */
+
+            // == Alternative using mutex
+            {
+                std::lock_guard<std::mutex> l(lock);
+                if (latestMap == cur_map) {
+                    latestMap = new_map;
+                    return;
+                }
             }
 
             // Failed, other thread updated the map at the same time.
-            // Free and retry.
-            delete new_map;
-            cur_map->decRC();
+            // Retry.
         } while (ticks_allowed--);
 
         // Update failed, ignore the given latency at this time.
     }
 
     uint64_t getAvgLatency(std::string lat_name) {
-        MapWrapper *cur_map = nullptr;
-
-        (cur_map = latestMap.load())->incRC();
+        MapWrapperPtr cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
-        cur_map->decRC();
-
-        if (item) {
-            return item->getAvgLatency();
-        }
-        return 0;
+        return (item)? item->getAvgLatency() : 0;
     }
 
     uint64_t getTotalTime(std::string lat_name) {
-        MapWrapper *cur_map = nullptr;
-
-        (cur_map = latestMap.load())->incRC();
+        MapWrapperPtr cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
-        cur_map->decRC();
-
-        if (item) {
-            return item->getTotalTime();
-        }
-        return 0;
+        return (item)? item->getTotalTime() : 0;
     }
 
     uint64_t getNumCalls(std::string lat_name) {
-        MapWrapper *cur_map = nullptr;
-
-        (cur_map = latestMap.load())->incRC();
+        MapWrapperPtr cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
-        cur_map->decRC();
-
-        if (item) {
-            return item->getNumCalls();
-        }
-        return 0;
+        return (item)? item->getNumCalls() : 0;
     }
 
     std::string dump() {
         std::string str;
-        MapWrapper *cur_map = nullptr;
-        (cur_map = latestMap.load())->incRC();
+        MapWrapperPtr cur_map = latestMap;
         str = cur_map->dump();
-        cur_map->decRC();
         return str;
     }
 
 private:
-    void garbageCollect() {
-        bool expected = false;
-        if (gcInProgress.compare_exchange_strong(expected, true)) {
-            // Allow only one thread for GC at a time.
-            GCRecursive(latestMap.load(), 0);
-            gcInProgress.store(false);
-        }
-    }
-
-    bool GCRecursive(MapWrapper* cursor, int depth) {
-        if (!cursor) {
-            return false;
-        }
-
-        MapWrapper* prev = cursor->getPrev();
-        bool gc_cur_wrapper = true;
-
-        if (prev) {
-            if (GCRecursive(prev, depth+1)) {
-                // Prev wrapper is reclaimed, clear the pointer.
-                cursor->clearPrev();
-            } else {
-                // Prev wrapper is still alive, stop GC.
-                return false;
-            }
-        }
-
-        if (depth && gc_cur_wrapper && cursor->isRemovable()) {
-            // Reclaim current wrapper if removable.
-            delete cursor;
-            return true;
-        }
-        return false;
-    }
-
-    std::atomic<MapWrapper*> latestMap;
-    std::atomic<bool> gcInProgress;
+    // Mutex for Compare-And-Swap of latestMap.
+    std::mutex lock;
+    std::shared_ptr<MapWrapper> latestMap;
 };
 
 
@@ -371,8 +275,8 @@ struct LatencyCollectWrapper {
             std::chrono::time_point<std::chrono::system_clock> end;
             end = std::chrono::system_clock::now();
 
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>
-                      (end - start);
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                    end - start);
             lat->addLatency(functionName, us.count());
         }
     }
@@ -383,8 +287,8 @@ struct LatencyCollectWrapper {
 };
 
 #define collectFuncLatency(lat) \
-        LatencyCollectWrapper __func_latency__((lat), __func__)
+    LatencyCollectWrapper __func_latency__((lat), __func__)
 
 #define collectBlockLatency(lat, name) \
-        LatencyCollectWrapper __block_latency__((lat), name)
+    LatencyCollectWrapper __block_latency__((lat), name)
 
