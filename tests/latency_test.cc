@@ -2,7 +2,7 @@
 #include <thread>
 
 #include "test_common.h"
-#include "latency.h"
+#include "latency_collector.h"
 
 struct test_args {
     LatencyCollector* lat;
@@ -66,7 +66,7 @@ void test_function_2ms() {
 
 void test_function_3ms() {
     collectFuncLatency(global_lat);
-    std::this_thread::sleep_for (std::chrono::milliseconds(2));
+    std::this_thread::sleep_for (std::chrono::milliseconds(3));
 }
 
 int latency_macro_test() {
@@ -92,12 +92,33 @@ int latency_macro_test() {
     return 0;
 }
 
+int not_called_function_macro_test() {
+    global_lat = new LatencyCollector();
+
+    global_lat->addStatName("test_function_1ms");
+    global_lat->addStatName("test_function_2ms");
+    global_lat->addStatName("test_function_3ms");
+    global_lat->addStatName("test_function_4ms");
+    global_lat->addStatName("test_function_5ms");
+
+    test_function_1ms();
+    test_function_2ms();
+    test_function_3ms();
+
+    printf("%s\n\n", global_lat->dump().c_str());
+    delete global_lat;
+    global_lat = nullptr;
+
+    return 0;
+}
+
 int main()
 {
     TestSuite test;
 
     test.doTest("multi thread test", MT_basic_insert_test);
     test.doTest("function latency macro test", latency_macro_test);
+    test.doTest("not called function macro test", not_called_function_macro_test);
 
     return 0;
 }
