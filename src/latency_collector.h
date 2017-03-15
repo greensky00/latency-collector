@@ -1,3 +1,28 @@
+/**
+ * Copyright (C) 2017-present Jung-Sang Ahn <jungsang.ahn@gmail.com>
+ * All rights reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following
+ * conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ */
 
 #include <inttypes.h>
 #include <stdint.h>
@@ -17,7 +42,8 @@ struct LatencyBin {
         : latSum(0),
           latNum(0),
           latMax(0),
-          latMin(std::numeric_limits<uint64_t>::max()) {}
+          latMin(std::numeric_limits<uint64_t>::max()) {
+    }
     std::atomic<uint64_t> latSum;
     std::atomic<uint64_t> latNum;
     std::atomic<uint64_t> latMax;
@@ -43,7 +69,7 @@ public:
         do {
             uint64_t lat_max = bin.latMax.load(std::memory_order_relaxed);
             if (lat_max < latency) {
-                if (!bin.latMax.compare_exchange_strong(lat_max, latency)) {
+                if (!bin.latMax.compare_exchange_weak(lat_max, latency)) {
                     continue;
                 }
             }
@@ -54,7 +80,7 @@ public:
         do {
             uint64_t lat_min = bin.latMin.load(std::memory_order_relaxed);
             if (lat_min > latency) {
-                if (!bin.latMin.compare_exchange_strong(lat_min, latency)) {
+                if (!bin.latMin.compare_exchange_weak(lat_min, latency)) {
                     continue;
                 }
             }
@@ -111,7 +137,7 @@ public:
             double tmp = static_cast<double>(us / 1000000.0);
             ss << std::fixed << std::setprecision(1) << tmp << " s";
         } else {
-            // min
+            // minute
             double tmp = static_cast<double>(us / 60.0 / 1000000.0);
             ss << std::fixed << std::setprecision(0) << tmp << " m";
         }
@@ -282,7 +308,6 @@ private:
 };
 
 using MapWrapperSharedPtr = std::shared_ptr<MapWrapper>;
-//using MapWrapperSharedPtr = MapWrapper*; // for debugging
 
 class LatencyCollector {
 public:
