@@ -26,6 +26,7 @@
 
 #include <inttypes.h>
 #include <stdint.h>
+#include <assert.h>
 #include <atomic>
 #include <chrono>
 #include <ctime>
@@ -35,6 +36,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 struct LatencyBin {
@@ -444,6 +446,30 @@ private:
     MapWrapperSharedPtr latestMap;
 };
 
+struct ThreadTrackerItem {
+    ThreadTrackerItem() : numStacks(0) {}
+
+    void pushStackName(std::string cur_stack_name) {
+        aggrStackName += " ## ";
+        aggrStackName += cur_stack_name;
+        numStacks++;
+    }
+
+    size_t popLastStack() {
+        if (--numStacks == 0) {
+            aggrStackName.clear();
+            return numStacks;
+        }
+        size_t n = aggrStackName.rfind(" ## ");
+        aggrStackName = aggrStackName.substr(0, n);
+        return numStacks;
+    }
+
+    std::string getAggrStackName() const { return aggrStackName; }
+
+    size_t numStacks;
+    std::string aggrStackName;
+};
 
 struct LatencyCollectWrapper {
     LatencyCollectWrapper(LatencyCollector *_lat,
@@ -451,7 +477,10 @@ struct LatencyCollectWrapper {
         lat = _lat;
         if (lat) {
             start = std::chrono::system_clock::now();
-            functionName = _func_name;
+
+            thread_local ThreadTrackerItem thr_item;
+            cur_tracker = &thr_item;
+            cur_tracker->pushStackName(_func_name);
         }
     }
 
@@ -462,12 +491,13 @@ struct LatencyCollectWrapper {
 
             auto us = std::chrono::duration_cast<std::chrono::microseconds>(
                     end - start);
-            lat->addLatency(functionName, us.count());
+            lat->addLatency(cur_tracker->getAggrStackName(), us.count());
+            cur_tracker->popLastStack();
         }
     }
 
-    std::string functionName;
     LatencyCollector *lat;
+    ThreadTrackerItem *cur_tracker;
     std::chrono::time_point<std::chrono::system_clock> start;
 };
 

@@ -56,17 +56,17 @@ int MT_basic_insert_test() {
 
 void test_function_1ms() {
     collectFuncLatency(global_lat);
-    std::this_thread::sleep_for (std::chrono::milliseconds(1));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
 void test_function_2ms() {
     collectFuncLatency(global_lat);
-    std::this_thread::sleep_for (std::chrono::milliseconds(2));
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
 }
 
 void test_function_3ms() {
     collectFuncLatency(global_lat);
-    std::this_thread::sleep_for (std::chrono::milliseconds(3));
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
 }
 
 int latency_macro_test() {
@@ -83,6 +83,10 @@ int latency_macro_test() {
         for (j=0; j<n_calls[i]; ++j) {
             funcs[i]();
         }
+    }
+
+    for (i=0; i<n_calls.size(); ++i) {
+        funcs[i]();
     }
 
     printf("%s\n\n", global_lat->dump().c_str());
