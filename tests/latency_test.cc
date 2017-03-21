@@ -3,6 +3,7 @@
 
 #include "test_common.h"
 #include "latency_collector.h"
+#include "latency_dump.h"
 
 struct test_args {
     LatencyCollector* lat;
