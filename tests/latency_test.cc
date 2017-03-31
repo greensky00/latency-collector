@@ -49,6 +49,7 @@ int MT_basic_insert_test() {
     printf("%s\n\n", lat.dump().c_str());
 
     printf("%s\n\n", global_lat->dump().c_str());
+
     delete global_lat;
     global_lat = nullptr;
 
@@ -124,6 +125,13 @@ int main()
     test.doTest("multi thread test", MT_basic_insert_test);
     test.doTest("function latency macro test", latency_macro_test);
     test.doTest("not called function macro test", not_called_function_macro_test);
+
+    std::string aa = " ## abc ## bbc";
+    printf("%zu\n", getNumStacks(aa));
+    aa = " ## abc";
+    printf("%zu\n", getNumStacks(aa));
+    aa = " ## abc ## bbc ## ccc";
+    printf("%zu\n", getNumStacks(aa));
 
     return 0;
 }

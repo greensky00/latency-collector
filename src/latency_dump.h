@@ -28,6 +28,8 @@
 
 #include "latency_collector.h"
 
+#include <list>
+#include <memory>
 
 static std::string usToString(uint64_t us) {
     std::stringstream ss;
@@ -85,6 +87,32 @@ std::string LatencyItem::dump(size_t max_filename_field) {
     return ss.str();
 }
 
+struct DumpItem {
+    using DumpItemPtr = std::unique_ptr<DumpItem>;
+
+    size_t level;
+    std::list<DumpItemPtr> child;
+};
+
+size_t getNumStacks(std::string& str) {
+    size_t pos = 0;
+    size_t str_size = str.size();
+    size_t ret = 0;
+    while (pos < str_size) {
+        pos = str.find(" ## ", pos);
+        if (pos == std::string::npos) break;
+        pos += 4;
+        ret++;
+    }
+    return ret;
+}
+
+std::string MapWrapper::dump2() {
+    std::stringstream ss;
+    DumpItem root;
+
+    return ss.str();
+}
 
 std::string MapWrapper::dump(LatencyCollectorDumpOptions opt) {
     std::stringstream ss;

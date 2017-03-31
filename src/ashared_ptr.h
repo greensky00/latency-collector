@@ -1,0 +1,132 @@
+/**
+ * Copyright (C) 2017-present Jung-Sang Ahn <jungsang.ahn@gmail.com>
+ * All rights reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without
+ * restriction, including without limitation the rights to use,
+ * copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the
+ * Software is furnished to do so, subject to the following
+ * conditions:
+ *
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+ * WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#pragma once
+
+#include <atomic>
+#include <mutex>
+
+template<typename T>
+struct PtrWrapper {
+    PtrWrapper() : ptr(nullptr), refCount(0) {}
+    PtrWrapper(T* src) : ptr(src), refCount(1) {}
+
+    std::atomic<T*> ptr;
+    std::atomic<uint64_t> refCount;
+};
+
+template<typename T>
+class ashared_ptr {
+public:
+    ashared_ptr() : object(nullptr) {}
+    ashared_ptr(T* src_ptr) : object( (src_ptr)
+                                      ? new PtrWrapper<T>(src_ptr)
+                                      : nullptr ) {}
+    ashared_ptr(const ashared_ptr<T>& src) : object(nullptr) {
+        operator=(src);
+    }
+
+    ~ashared_ptr() {
+        reset();
+    }
+
+    void reset() {
+        std::lock_guard<std::mutex> l(lock);
+        PtrWrapper<T>* ptr = object.load(MO);
+        // Unlink pointer first, destroy object next.
+        object.store(nullptr, MO);
+        releaseObject(ptr);
+    }
+
+    bool operator==(const ashared_ptr<T>& src) const {
+        return object.load(MO) == src.object.load(MO);
+    }
+
+    void operator=(const ashared_ptr<T>& src) {
+        std::lock_guard<std::mutex> l(lock);
+
+        ashared_ptr<T>& writable_src = const_cast<ashared_ptr<T>&>(src);
+        PtrWrapper<T>* src_object = writable_src.shareCurObject();
+
+        // Replace object.
+        PtrWrapper<T>* old = object.load(MO);
+        object.store(src_object, MO);
+
+        // Release old object.
+        releaseObject(old);
+    }
+
+    T* operator->() const { return object.load(MO)->ptr.load(MO); }
+    T& operator*() const { return *object.load(MO)->ptr.load(MO); }
+    T* get() const { return object.load(MO)->ptr.load(MO); }
+
+    bool compare_exchange(ashared_ptr<T>& expected, ashared_ptr<T> src) {
+        // Note: it is OK that `expected` becomes outdated.
+        PtrWrapper<T>* expected_ptr = expected.object.load(MO);
+        PtrWrapper<T>* val_ptr = src.shareCurObject();
+
+        { // Lock for `object`
+            std::lock_guard<std::mutex> l(lock);
+            if (object.compare_exchange_weak(expected_ptr, val_ptr)) {
+                // Succeeded.
+                // Release old object.
+                releaseObject(expected.object.load(MO));
+                return true;
+            }
+        }
+        // Failed.
+        expected = *this;
+        // Release the object from `src`.
+        releaseObject(val_ptr);
+        return false;
+    }
+
+private:
+    // Atomically increase ref count and then return.
+    PtrWrapper<T>* shareCurObject() {
+        std::lock_guard<std::mutex> l(lock);
+        // Now no one can change `object`.
+        // By increasing its ref count, `object` will be safe
+        // until the new holder (i.e., caller) is destructed.
+        object.load(MO)->refCount.fetch_add(1, MO);
+        return object.load(MO);
+    }
+
+    // Decrease ref count and delete if no one refers to it.
+    void releaseObject(PtrWrapper<T>* target) {
+        if (!target) return;
+        if (target->refCount.fetch_sub(1, MO) == 1) {
+            // Last shared pointer, delete it.
+            delete target->ptr.load(MO);
+            delete target;
+        }
+    }
+
+    const static std::memory_order MO = std::memory_order_relaxed;
+
+    std::atomic<PtrWrapper<T>*> object;
+    std::mutex lock;
+};

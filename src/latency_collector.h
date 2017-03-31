@@ -26,6 +26,8 @@
 
 #pragma once
 
+#include "ashared_ptr.h"
+
 #include <inttypes.h>
 #include <stdint.h>
 #include <assert.h>
@@ -161,10 +163,20 @@ public:
         map = src.map;
     }
 
-    LatencyItem* addNew(std::string bin_name) {
+    LatencyItem* addItem(std::string bin_name) {
         LatencyItem* item = new LatencyItem(bin_name);
         map.insert( std::make_pair(bin_name, item) );
         return item;
+    }
+
+    void delItem(std::string bin_name) {
+        LatencyItem* item = nullptr;
+        auto entry = map.find(bin_name);
+        if (entry != map.end()) {
+            item = entry->second;
+            map.erase(entry);
+            delete item;
+        }
     }
 
     LatencyItem* get(std::string bin_name) {
@@ -177,6 +189,7 @@ public:
     }
 
     std::string dump(LatencyCollectorDumpOptions opt);
+    std::string dump2();
 
     void freeAllItems() {
         for (auto& entry : map) {
@@ -188,7 +201,8 @@ private:
     std::unordered_map<std::string, LatencyItem*> map;
 };
 
-using MapWrapperSharedPtr = std::shared_ptr<MapWrapper>;
+using MapWrapperSharedPtr = ashared_ptr<MapWrapper>;
+//using MapWrapperSharedPtr = std::shared_ptr<MapWrapper>;
 
 class LatencyCollector {
 public:
@@ -207,7 +221,7 @@ public:
     void addStatName(std::string lat_name) {
         MapWrapperSharedPtr cur_map = latestMap;
         if (!cur_map->get(lat_name)) {
-            cur_map->addNew(lat_name);
+            cur_map->addItem(lat_name);
         } // Otherwise: already exists.
     }
 
@@ -237,43 +251,24 @@ public:
             // anything.
 
             // Copy from the current map.
-            MapWrapperSharedPtr new_map = std::make_shared<MapWrapper>(*cur_map);
+            MapWrapper* new_map_raw = new MapWrapper();
+            new_map_raw->copyFrom(*cur_map);
+            MapWrapperSharedPtr new_map = MapWrapperSharedPtr(new_map_raw);
 
             // Add a new item.
-            item = new_map->addNew(lat_name);
+            item = new_map->addItem(lat_name);
             item->addLatency(lat_value);
 
             // Atomic CAS, from current map to new map
-            //
-            // Note:
-            // * according to C++11 standard, we should be able to use
-            //   `atomic_compare_exchange_...` here, but it is mistakenly
-            //   omitted in stdc++ library. We need to use mutex instead
-            //   until it is fixed.
-            // * load/store shared_ptr is atomic. Don't need to think about
-            //   readers.
-
-            /*
-            // == Original code using atomic operation:
             MapWrapperSharedPtr expected = cur_map;
-            if (std::atomic_compare_exchange_strong(
-                        &latestMap, &expected, new_map)) {
+            if (latestMap.compare_exchange(expected, new_map)) {
                 // Succeeded.
                 return;
             }
-            */
-
-            // == Alternative code using mutex
-            {
-                std::lock_guard<std::mutex> l(lock);
-                if (latestMap == cur_map) {
-                    latestMap = new_map;
-                    // Succeeded.
-                    return;
-                }
-            }
 
             // Failed, other thread updated the map at the same time.
+            // Delete newly added item.
+            new_map_raw->delItem(lat_name);
             // Retry.
         } while (ticks_allowed--);
 
@@ -351,11 +346,15 @@ struct ThreadTrackerItem {
 };
 
 struct LatencyCollectWrapper {
+    using SystemClock = std::chrono::system_clock;
+    using TimePoint = std::chrono::time_point<SystemClock>;
+    using MicroSeconds = std::chrono::microseconds;
+
     LatencyCollectWrapper(LatencyCollector *_lat,
                           std::string _func_name) {
         lat = _lat;
         if (lat) {
-            start = std::chrono::system_clock::now();
+            start = SystemClock::now();
 
             thread_local ThreadTrackerItem thr_item;
             cur_tracker = &thr_item;
@@ -365,11 +364,9 @@ struct LatencyCollectWrapper {
 
     ~LatencyCollectWrapper() {
         if (lat) {
-            std::chrono::time_point<std::chrono::system_clock> end;
-            end = std::chrono::system_clock::now();
+            TimePoint end = SystemClock::now();
+            auto us = std::chrono::duration_cast<MicroSeconds>(end - start);
 
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                    end - start);
             lat->addLatency(cur_tracker->getAggrStackName(), us.count());
             cur_tracker->popLastStack();
         }
@@ -377,17 +374,17 @@ struct LatencyCollectWrapper {
 
     LatencyCollector *lat;
     ThreadTrackerItem *cur_tracker;
-    std::chrono::time_point<std::chrono::system_clock> start;
+    TimePoint start;
 };
 
 #if defined(WIN32) || defined(_WIN32)
 #define collectFuncLatency(lat) \
-    LatencyCollectWrapper __func_latency__((lat), __FUNCTION__)
+    LatencyCollectWrapper LCW__func_latency__((lat), __FUNCTION__)
 #else
 #define collectFuncLatency(lat) \
-    LatencyCollectWrapper __func_latency__((lat), __func__)
+    LatencyCollectWrapper LCW__func_latency__((lat), __func__)
 #endif
 
 #define collectBlockLatency(lat, name) \
-    LatencyCollectWrapper __block_latency__((lat), name)
+    LatencyCollectWrapper LCW__block_latency__((lat), name)
 
