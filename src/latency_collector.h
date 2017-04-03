@@ -189,7 +189,7 @@ public:
     }
 
     std::string dump(LatencyCollectorDumpOptions opt);
-    std::string dump2();
+    std::string dumpTree(LatencyCollectorDumpOptions opt);
 
     void freeAllItems() {
         for (auto& entry : map) {
@@ -201,13 +201,13 @@ private:
     std::unordered_map<std::string, LatencyItem*> map;
 };
 
-using MapWrapperSharedPtr = ashared_ptr<MapWrapper>;
-//using MapWrapperSharedPtr = std::shared_ptr<MapWrapper>;
+using MapWrapperSP = ashared_ptr<MapWrapper>;
+//using MapWrapperSP = std::shared_ptr<MapWrapper>;
 
 class LatencyCollector {
 public:
     LatencyCollector() {
-        latestMap = MapWrapperSharedPtr(new MapWrapper());
+        latestMap = MapWrapperSP(new MapWrapper());
     }
 
     ~LatencyCollector() {
@@ -219,14 +219,14 @@ public:
     }
 
     void addStatName(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         if (!cur_map->get(lat_name)) {
             cur_map->addItem(lat_name);
         } // Otherwise: already exists.
     }
 
     void addLatency(std::string lat_name, uint64_t lat_value) {
-        MapWrapperSharedPtr cur_map = nullptr;
+        MapWrapperSP cur_map = nullptr;
 
         size_t ticks_allowed = MAX_ADD_NEW_ITEM_RETRIES;
         do {
@@ -253,14 +253,14 @@ public:
             // Copy from the current map.
             MapWrapper* new_map_raw = new MapWrapper();
             new_map_raw->copyFrom(*cur_map);
-            MapWrapperSharedPtr new_map = MapWrapperSharedPtr(new_map_raw);
+            MapWrapperSP new_map = MapWrapperSP(new_map_raw);
 
             // Add a new item.
             item = new_map->addItem(lat_name);
             item->addLatency(lat_value);
 
             // Atomic CAS, from current map to new map
-            MapWrapperSharedPtr expected = cur_map;
+            MapWrapperSP expected = cur_map;
             if (latestMap.compare_exchange(expected, new_map)) {
                 // Succeeded.
                 return;
@@ -276,31 +276,31 @@ public:
     }
 
     uint64_t getAvgLatency(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item)? item->getAvgLatency() : 0;
     }
 
     uint64_t getMinLatency(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item && item->getNumCalls()) ? item->getMinLatency() : 0;
     }
 
     uint64_t getMaxLatency(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getMaxLatency() : 0;
     }
 
     uint64_t getTotalTime(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getTotalTime() : 0;
     }
 
     uint64_t getNumCalls(std::string lat_name) {
-        MapWrapperSharedPtr cur_map = latestMap;
+        MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getNumCalls() : 0;
     }
@@ -308,8 +308,9 @@ public:
     std::string dump(
             LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions()) {
         std::string str;
-        MapWrapperSharedPtr cur_map = latestMap;
-        str = cur_map->dump(opt);
+        MapWrapperSP cur_map_p = latestMap;
+        MapWrapper* cur_map = cur_map_p.get();
+        str = cur_map->dumpTree(opt);
         return str;
     }
 
@@ -317,13 +318,13 @@ private:
     static const size_t MAX_ADD_NEW_ITEM_RETRIES = 16;
     // Mutex for Compare-And-Swap of latestMap.
     std::mutex lock;
-    MapWrapperSharedPtr latestMap;
+    MapWrapperSP latestMap;
 };
 
 struct ThreadTrackerItem {
     ThreadTrackerItem() : numStacks(0) {}
 
-    void pushStackName(std::string cur_stack_name) {
+    void pushStackName(std::string& cur_stack_name) {
         aggrStackName += " ## ";
         aggrStackName += cur_stack_name;
         numStacks++;
