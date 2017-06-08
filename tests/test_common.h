@@ -4,7 +4,8 @@
  *
  * https://github.com/greensky00
  *
- * Version: 0.1.13
+ * Test Suite
+ * Version: 0.1.15
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -47,7 +48,7 @@
 #define _CLM_RED       "\033[31m"
 #define _CLM_B_RED     "\033[1;31m"
 #define _CLM_BROWN     "\033[33m"
-#define _CLM_BLUE      "\033[34m"
+#define _CLM_BLUE      "\033[34m"
 #define _CLM_B_BLUE    "\033[1;34m"
 #define _CLM_MAGENTA   "\033[35m"
 #define _CLM_B_MAGENTA "\033[1;35m"
