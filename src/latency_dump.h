@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector Dump Module
- * Version: 0.1.1
+ * Version: 0.1.2
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -250,8 +250,8 @@ std::string MapWrapper::dumpTree(LatencyCollectorDumpOptions opt) {
 
 std::string MapWrapper::dump(LatencyCollectorDumpOptions opt) {
     std::stringstream ss;
-    ss << "# stats: " << getSize() << std::endl;
     if (!getSize()) {
+        ss << "# stats: " << getSize() << std::endl;
         return ss.str();
     }
 
@@ -281,6 +281,8 @@ std::string MapWrapper::dump(LatencyCollectorDumpOptions opt) {
             max_name_len = actual_name.size();
         }
     }
+
+    ss << "# stats: " << map_string.size() << std::endl;
 
     for (auto& entry: map_string) {
         LatencyItem *item = entry.second;
