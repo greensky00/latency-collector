@@ -2,6 +2,11 @@
  * Copyright (C) 2017-present Jung-Sang Ahn <jungsang.ahn@gmail.com>
  * All rights reserved.
  *
+ * https://github.com/greensky00
+ *
+ * Latency Collector
+ * Version: 0.1.1
+ *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
  * files (the "Software"), to deal in the Software without
@@ -27,14 +32,18 @@
 #pragma once
 
 #include "ashared_ptr.h"
+#include "histogram.h"
 
 #include <inttypes.h>
 #include <stdint.h>
+#include <string.h>
 #include <assert.h>
+
 #include <atomic>
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -43,97 +52,70 @@
 #include <thread>
 #include <unordered_map>
 
-struct LatencyBin {
-    LatencyBin()
-        : latSum(0),
-          latNum(0),
-          latMax(0),
-          latMin(std::numeric_limits<uint64_t>::max()) {
-    }
-    std::atomic<uint64_t> latSum;
-    std::atomic<uint64_t> latNum;
-    std::atomic<uint64_t> latMax;
-    std::atomic<uint64_t> latMin;
-};
-
 class LatencyItem {
 public:
-    LatencyItem(std::string _name) : statName(_name) {
+    LatencyItem(std::string _name) : statName(_name) {}
+    LatencyItem(const LatencyItem& src)
+        : statName(src.statName),
+          hist(src.hist) {}
+
+    // this += rhs
+    LatencyItem& operator+=(const LatencyItem& rhs) {
+        hist += rhs.hist;
+        return *this;
     }
-    ~LatencyItem() {
+
+    // returning lhs + rhs
+    friend LatencyItem operator+(LatencyItem lhs,
+                                 const LatencyItem& rhs) {
+        lhs.hist += rhs.hist;
+        return lhs;
     }
 
     std::string getName() const {
         return statName;
     }
 
-    void addLatency(uint64_t latency) {
-        bin.latSum.fetch_add(latency, std::memory_order_relaxed);
-        bin.latNum.fetch_add(1, std::memory_order_relaxed);
+    void addLatency(uint64_t latency) { hist.add(latency); }
 
-        int retry = MAX_STAT_UPDATE_RETRIES;
-        do {
-            uint64_t lat_max = bin.latMax.load(std::memory_order_relaxed);
-            if (lat_max < latency) {
-                if (!bin.latMax.compare_exchange_weak(lat_max, latency)) {
-                    continue;
-                }
-            }
-            break;
-        } while (--retry);
-
-        retry = MAX_STAT_UPDATE_RETRIES;
-        do {
-            uint64_t lat_min = bin.latMin.load(std::memory_order_relaxed);
-            if (lat_min > latency) {
-                if (!bin.latMin.compare_exchange_weak(lat_min, latency)) {
-                    continue;
-                }
-            }
-            break;
-        } while (--retry);
+    uint64_t getAvgLatency() const { return hist.getAverage(); }
+    uint64_t getTotalTime() const { return hist.getSum(); }
+    uint64_t getNumCalls() const { return hist.getTotal(); }
+    uint64_t getMaxLatency() const { return hist.getMax(); }
+    uint64_t getMinLatency() { return hist.estimate(1); }
+    uint64_t getPercentile(double percentile) {
+        return hist.estimate(percentile);
     }
 
-    uint64_t getAvgLatency() const {
-        return (bin.latNum) ? (bin.latSum / bin.latNum) : 0;
-    }
-
-    uint64_t getTotalTime() const {
-        return bin.latSum;
-    }
-
-    uint64_t getNumCalls() const {
-        return bin.latNum;
-    }
-
-    uint64_t getMaxLatency() const {
-        return bin.latMax;
-    }
-
-    uint64_t getMinLatency() const {
-        return bin.latMin;
-    }
-
-    std::string dump(size_t max_filename_field = 0);
+    std::string dump(size_t max_filename_field = 0,
+                     uint64_t parent_total_time = 0,
+                     bool add_tab = true);
 
 private:
-    static const size_t MAX_STAT_UPDATE_RETRIES = 16;
     std::string statName;
-    LatencyBin bin;
-};
-
-enum class LatencyCollectorDumpSortBy {
-    NAME,
-    TOTAL_TIME,
-    NUM_CALLS,
-    AVG_LATENCY
+    Histogram hist;
 };
 
 struct LatencyCollectorDumpOptions {
+    enum class SortBy {
+        NAME,
+        TOTAL_TIME,
+        NUM_CALLS,
+        AVG_LATENCY
+    };
+
+    enum class ViewType {
+        TREE,
+        FLAT
+    };
+
     LatencyCollectorDumpOptions()
-        : sort_by(LatencyCollectorDumpSortBy::AVG_LATENCY) {
-    }
-    LatencyCollectorDumpSortBy sort_by;
+        : sort_by(SortBy::NAME),
+          view_type(ViewType::TREE)
+    { }
+
+    SortBy sort_by;
+    ViewType view_type;
 };
 
 class MapWrapper {
@@ -306,13 +288,7 @@ public:
     }
 
     std::string dump(
-            LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions()) {
-        std::string str;
-        MapWrapperSP cur_map_p = latestMap;
-        MapWrapper* cur_map = cur_map_p.get();
-        str = cur_map->dumpTree(opt);
-        return str;
-    }
+            LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions());
 
 private:
     static const size_t MAX_ADD_NEW_ITEM_RETRIES = 16;
@@ -322,28 +298,45 @@ private:
 };
 
 struct ThreadTrackerItem {
-    ThreadTrackerItem() : numStacks(0) {}
+    ThreadTrackerItem()
+        : numStacks(0),
+          aggrStackNameRaw(4096),
+          lenName(0)
+        {}
 
     void pushStackName(std::string& cur_stack_name) {
-        aggrStackName += " ## ";
-        aggrStackName += cur_stack_name;
+        size_t cur_stack_name_len = cur_stack_name.size();
+        while (lenName + 4 + cur_stack_name_len > aggrStackNameRaw.size()) {
+            // Double the string buffer.
+            aggrStackNameRaw.resize(aggrStackNameRaw.size() * 2);
+        }
+
+        // Remember the latest length for later poping up.
+        lenStack.push_back(lenName);
+        strcpy(&aggrStackNameRaw[0] + lenName, " ## ");
+        lenName += 4;
+        strcpy(&aggrStackNameRaw[0] + lenName, cur_stack_name.c_str());
+        lenName += cur_stack_name_len;
+
         numStacks++;
     }
 
     size_t popLastStack() {
-        if (--numStacks == 0) {
-            aggrStackName.clear();
-            return numStacks;
-        }
-        size_t n = aggrStackName.rfind(" ## ");
-        aggrStackName = aggrStackName.substr(0, n);
-        return numStacks;
+        lenName = *(lenStack.rbegin());
+        lenStack.pop_back();
+
+        return --numStacks;
     }
 
-    std::string getAggrStackName() const { return aggrStackName; }
+    std::string getAggrStackName() {
+        aggrStackNameRaw[lenName] = 0;
+        return &aggrStackNameRaw[0];
+    }
 
     size_t numStacks;
-    std::string aggrStackName;
+    std::vector<char> aggrStackNameRaw;
+    size_t lenName;
+    std::list<size_t> lenStack;
 };
 
 struct LatencyCollectWrapper {

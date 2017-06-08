@@ -46,9 +46,9 @@ int MT_basic_insert_test() {
         t_hdl[i].join();
     }
 
-    printf("%s\n\n", lat.dump().c_str());
+    printf("%s\n", lat.dump().c_str());
 
-    printf("%s\n\n", global_lat->dump().c_str());
+    printf("%s\n", global_lat->dump().c_str());
 
     delete global_lat;
     global_lat = nullptr;
@@ -84,9 +84,10 @@ int latency_macro_test() {
 
     size_t i, j;
     std::vector<size_t> n_calls = {23, 19, 13};
-    std::vector<void (*)()> funcs = {test_function_1ms,
-                                     test_function_2ms,
-                                     test_function_3ms};
+    std::vector<std::function<void()> >
+            funcs = {test_function_1ms,
+                     test_function_2ms,
+                     test_function_3ms};
 
     for (i=0; i<n_calls.size(); ++i) {
         collectBlockLatency(global_lat, "outer for-loop");
@@ -99,7 +100,13 @@ int latency_macro_test() {
         funcs[i]();
     }
 
-    printf("%s\n\n", global_lat->dump().c_str());
+    printf("%s\n", global_lat->dump().c_str());
+
+    LatencyCollectorDumpOptions opt;
+    opt.view_type = LatencyCollectorDumpOptions::ViewType::FLAT;
+    opt.sort_by = LatencyCollectorDumpOptions::SortBy::AVG_LATENCY;
+    printf("%s\n", global_lat->dump(opt).c_str());
+
     delete global_lat;
     global_lat = nullptr;
 
@@ -110,6 +117,7 @@ int main()
 {
     TestSuite test;
 
+    test.options.printTestMessage = true;
     test.doTest("multi thread test", MT_basic_insert_test);
     test.doTest("function latency macro test", latency_macro_test);
 
