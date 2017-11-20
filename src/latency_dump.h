@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector Dump Module
- * Version: 0.1.2
+ * Version: 0.1.3
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -138,7 +138,7 @@ std::string LatencyItem::dump(size_t max_filename_field,
     ss << std::setw(8) << usToString(getAvgLatency()) << " ";
     ss << std::setw(8) << usToString(getPercentile(50)) << " ";
     ss << std::setw(8) << usToString(getPercentile(99)) << " ";
-    ss << std::setw(8) << usToString(getMaxLatency());
+    ss << std::setw(8) << usToString(getPercentile(99.9));
     return ss.str();
 }
 
@@ -185,7 +185,7 @@ void addDumpTitle(std::stringstream& ss, size_t max_name_len) {
     ss << std::setw(8) << "AVERAGE" << " ";
     ss << std::setw(8) << "p50" << " ";
     ss << std::setw(8) << "p99" << " ";
-    ss << std::setw(8) << "MAX";
+    ss << std::setw(8) << "p99.9";
     ss << std::endl;
 }
 
