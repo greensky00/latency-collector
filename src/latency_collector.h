@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector
- * Version: 0.1.1
+ * Version: 0.1.3
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -34,11 +34,6 @@
 #include "ashared_ptr.h"
 #include "histogram.h"
 
-#include <inttypes.h>
-#include <stdint.h>
-#include <string.h>
-#include <assert.h>
-
 #include <atomic>
 #include <chrono>
 #include <ctime>
@@ -51,6 +46,12 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
+
+#include <inttypes.h>
+#include <stdint.h>
+#include <string.h>
+#include <assert.h>
 
 class LatencyItem {
 public:
@@ -145,13 +146,13 @@ public:
         map = src.map;
     }
 
-    LatencyItem* addItem(std::string bin_name) {
+    LatencyItem* addItem(const std::string& bin_name) {
         LatencyItem* item = new LatencyItem(bin_name);
         map.insert( std::make_pair(bin_name, item) );
         return item;
     }
 
-    void delItem(std::string bin_name) {
+    void delItem(const std::string& bin_name) {
         LatencyItem* item = nullptr;
         auto entry = map.find(bin_name);
         if (entry != map.end()) {
@@ -161,7 +162,7 @@ public:
         }
     }
 
-    LatencyItem* get(std::string bin_name) {
+    LatencyItem* get(const std::string& bin_name) {
         LatencyItem* item = nullptr;
         auto entry = map.find(bin_name);
         if (entry != map.end()) {
@@ -200,14 +201,14 @@ public:
         return latestMap->getSize();
     }
 
-    void addStatName(std::string lat_name) {
+    void addStatName(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         if (!cur_map->get(lat_name)) {
             cur_map->addItem(lat_name);
         } // Otherwise: already exists.
     }
 
-    void addLatency(std::string lat_name, uint64_t lat_value) {
+    void addLatency(const std::string& lat_name, uint64_t lat_value) {
         MapWrapperSP cur_map = nullptr;
 
         size_t ticks_allowed = MAX_ADD_NEW_ITEM_RETRIES;
@@ -257,34 +258,40 @@ public:
         // Update failed, ignore the given latency at this time.
     }
 
-    uint64_t getAvgLatency(std::string lat_name) {
+    uint64_t getAvgLatency(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item)? item->getAvgLatency() : 0;
     }
 
-    uint64_t getMinLatency(std::string lat_name) {
+    uint64_t getMinLatency(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item && item->getNumCalls()) ? item->getMinLatency() : 0;
     }
 
-    uint64_t getMaxLatency(std::string lat_name) {
+    uint64_t getMaxLatency(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getMaxLatency() : 0;
     }
 
-    uint64_t getTotalTime(std::string lat_name) {
+    uint64_t getTotalTime(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getTotalTime() : 0;
     }
 
-    uint64_t getNumCalls(std::string lat_name) {
+    uint64_t getNumCalls(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
         return (item) ? item->getNumCalls() : 0;
+    }
+
+    uint64_t getPercentile(const std::string& lat_name, double percentile) {
+        MapWrapperSP cur_map = latestMap;
+        LatencyItem *item = cur_map->get(lat_name);
+        return (item) ? item->getPercentile(percentile) : 0;
     }
 
     std::string dump(
