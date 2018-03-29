@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector
- * Version: 0.1.3
+ * Version: 0.1.4
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -55,7 +55,7 @@
 
 class LatencyItem {
 public:
-    LatencyItem(std::string _name) : statName(_name) {}
+    LatencyItem(const std::string& _name) : statName(_name) {}
     LatencyItem(const LatencyItem& src)
         : statName(src.statName),
           hist(src.hist) {}
@@ -121,15 +121,12 @@ struct LatencyCollectorDumpOptions {
 
 class MapWrapper {
 public:
-    MapWrapper() {
-    }
-
+    MapWrapper() {}
     MapWrapper(const MapWrapper &src) {
         copyFrom(src);
     }
 
-    ~MapWrapper() {
-    }
+    ~MapWrapper() {}
 
     size_t getSize() const {
         size_t ret = 0;
@@ -294,8 +291,7 @@ public:
         return (item) ? item->getPercentile(percentile) : 0;
     }
 
-    std::string dump(
-            LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions());
+    std::string dump(LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions());
 
 private:
     static const size_t MAX_ADD_NEW_ITEM_RETRIES = 16;
@@ -311,7 +307,7 @@ struct ThreadTrackerItem {
           lenName(0)
         {}
 
-    void pushStackName(std::string& cur_stack_name) {
+    void pushStackName(const std::string& cur_stack_name) {
         size_t cur_stack_name_len = cur_stack_name.size();
         while (lenName + 4 + cur_stack_name_len > aggrStackNameRaw.size()) {
             // Double the string buffer.
@@ -352,7 +348,7 @@ struct LatencyCollectWrapper {
     using MicroSeconds = std::chrono::microseconds;
 
     LatencyCollectWrapper(LatencyCollector *_lat,
-                          std::string _func_name) {
+                          const std::string& _func_name) {
         lat = _lat;
         if (lat) {
             start = SystemClock::now();

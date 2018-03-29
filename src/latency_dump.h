@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector Dump Module
- * Version: 0.1.3
+ * Version: 0.1.4
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -85,7 +85,7 @@ static std::string ratioToPercent(uint64_t a, uint64_t b) {
     return ss.str();
 }
 
-size_t getNumStacks(std::string& str) {
+size_t getNumStacks(const std::string& str) {
     size_t pos = 0;
     size_t str_size = str.size();
     size_t ret = 0;
@@ -98,7 +98,7 @@ size_t getNumStacks(std::string& str) {
     return ret;
 }
 
-std::string getActualFunction(std::string str,
+std::string getActualFunction(const std::string& str,
                               bool add_tab = true) {
     size_t level = getNumStacks(str);
     if (!level) {
