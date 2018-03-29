@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Histogram
- * Version: 0.1.2
+ * Version: 0.1.4
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -34,7 +34,10 @@
 #include <stdint.h>
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <cmath>
+#include <limits>
 
 using HistBin = std::atomic<uint64_t>;
 
@@ -139,16 +142,23 @@ public:
     }
 
     Histogram(const Histogram& src) {
+        bins = new HistBin[maxBins];
+        *this = src;
+    }
+
+    ~Histogram() {
+        delete[] bins;
+    }
+
+    // this = src
+    Histogram& operator=(const Histogram& src) {
         count = src.getTotal();
         sum = src.getSum();
         max = src.getMax();
         for (size_t i=0; i<maxBins; ++i) {
             bins[i] += src.bins[i];
         }
-    }
-
-    ~Histogram() {
-        delete[] bins;
+        return *this;
     }
 
     // this += rhs
@@ -183,6 +193,21 @@ public:
     }
 
     void add(uint64_t val) {
+        // if `val` == 1
+        //          == 0x00...01
+        //                     ^
+        //                     64th bit
+        //   then `idx` = 63.
+        //
+        // if `val` == UINT64_MAX
+        //          == 0xff...ff
+        //               ^
+        //               1st bit
+        //   then `idx` = 0.
+        //
+        // so we should handle `val` == 0 as a special case (`idx` = 64),
+        // that's the reason why num bins is 65.
+
         int idx = maxBins - 1;
         if (val) {
             idx = __builtin_clzl(val);
@@ -194,7 +219,7 @@ public:
         size_t num_trial = 0;
         while (num_trial++ < max_trial &&
                max.load(std::memory_order_relaxed) < val) {
-            // 'max' may not be updated properly under racing condition.
+            // 'max' may not be updated properly under race condition.
             max.store(val, std::memory_order_relaxed);
         }
     }
