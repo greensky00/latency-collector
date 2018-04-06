@@ -1,9 +1,10 @@
-#include <stdio.h>
-#include <thread>
-
 #include "test_common.h"
 #include "latency_collector.h"
 #include "latency_dump.h"
+
+#include <thread>
+
+#include <stdio.h>
 
 struct test_args {
     LatencyCollector* lat;
