@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector Dump Module
- * Version: 0.1.4
+ * Version: 0.1.5
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -85,7 +85,7 @@ static std::string ratioToPercent(uint64_t a, uint64_t b) {
     return ss.str();
 }
 
-size_t getNumStacks(const std::string& str) {
+static size_t getNumStacks(const std::string& str) {
     size_t pos = 0;
     size_t str_size = str.size();
     size_t ret = 0;
@@ -98,8 +98,8 @@ size_t getNumStacks(const std::string& str) {
     return ret;
 }
 
-std::string getActualFunction(const std::string& str,
-                              bool add_tab = true) {
+static std::string getActualFunction(const std::string& str,
+                                     bool add_tab = true) {
     size_t level = getNumStacks(str);
     if (!level) {
         return str;
@@ -116,9 +116,11 @@ std::string getActualFunction(const std::string& str,
     return ret;
 }
 
+inline
 std::string LatencyItem::dump(size_t max_filename_field,
                               uint64_t parent_total_time,
-                              bool add_tab) {
+                              bool add_tab)
+{
     if (!max_filename_field) {
         max_filename_field = 32;
     }
@@ -158,9 +160,9 @@ struct DumpItem {
 };
 using DumpItemP = DumpItem::UPtr;
 
-void dumpRecursive(std::stringstream& ss,
-                   DumpItem* dump_item,
-                   size_t max_name_len) {
+static void dumpRecursive(std::stringstream& ss,
+                          DumpItem* dump_item,
+                          size_t max_name_len) {
     if (dump_item->itself) {
         if (dump_item->parent) {
             ss << dump_item->itself->dump(max_name_len,
@@ -176,7 +178,7 @@ void dumpRecursive(std::stringstream& ss,
     }
 }
 
-void addDumpTitle(std::stringstream& ss, size_t max_name_len) {
+static void addDumpTitle(std::stringstream& ss, size_t max_name_len) {
     ss << std::left << std::setw(max_name_len) << "STAT NAME" << ": ";
     ss << std::right;
     ss << std::setw(8) << "TOTAL" << " ";
@@ -189,10 +191,10 @@ void addDumpTitle(std::stringstream& ss, size_t max_name_len) {
     ss << std::endl;
 }
 
-void addToUintMap(uint64_t value,
-                    std::multimap<uint64_t,
-                                  LatencyItem*,
-                                  std::greater<uint64_t> >& map,
+static void addToUintMap(uint64_t value,
+                         std::multimap<uint64_t,
+                                       LatencyItem*,
+                                       std::greater<uint64_t> >& map,
                     LatencyItem* item) {
     auto entry = map.find(value);
     if (entry != map.end()) {
@@ -203,6 +205,7 @@ void addToUintMap(uint64_t value,
     map.insert( std::make_pair(value, item) );
 }
 
+inline
 std::string MapWrapper::dumpTree(LatencyCollectorDumpOptions opt) {
     std::stringstream ss;
     DumpItem root;
@@ -248,6 +251,7 @@ std::string MapWrapper::dumpTree(LatencyCollectorDumpOptions opt) {
     return ss.str();
 }
 
+inline
 std::string MapWrapper::dump(LatencyCollectorDumpOptions opt) {
     std::stringstream ss;
     if (!getSize()) {
@@ -336,6 +340,7 @@ std::string MapWrapper::dump(LatencyCollectorDumpOptions opt) {
     return ss.str();
 }
 
+inline
 std::string LatencyCollector::dump(LatencyCollectorDumpOptions opt) {
     std::string str;
     MapWrapperSP cur_map_p = latestMap;

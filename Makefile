@@ -9,6 +9,7 @@ CXXFLAGS += -Wall
 
 LATENCY_TEST = \
 	tests/latency_test.o \
+	tests/dummy.o \
 
 PROGRAMS = \
 	tests/latency_test \
