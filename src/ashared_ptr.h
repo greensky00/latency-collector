@@ -2,6 +2,11 @@
  * Copyright (C) 2017-present Jung-Sang Ahn <jungsang.ahn@gmail.com>
  * All rights reserved.
  *
+ * https://github.com/greensky00
+ *
+ * Atomic Shared Pointer
+ * Version: 0.1.1
+ *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
  * files (the "Software"), to deal in the Software without
@@ -26,17 +31,10 @@
 
 #pragma once
 
+#include <stdint.h>
+
 #include <atomic>
 #include <mutex>
-
-template<typename T>
-struct PtrWrapper {
-    PtrWrapper() : ptr(nullptr), refCount(0) {}
-    PtrWrapper(T* src) : ptr(src), refCount(1) {}
-
-    std::atomic<T*> ptr;
-    std::atomic<uint64_t> refCount;
-};
 
 template<typename T>
 class ashared_ptr {
@@ -105,9 +103,20 @@ public:
     }
 
 private:
+    template<typename T2>
+    struct PtrWrapper {
+        PtrWrapper() : ptr(nullptr), refCount(0) {}
+        PtrWrapper(T2* src) : ptr(src), refCount(1) {}
+
+        std::atomic<T2*> ptr;
+        std::atomic<uint64_t> refCount;
+    };
+
     // Atomically increase ref count and then return.
     PtrWrapper<T>* shareCurObject() {
         std::lock_guard<std::mutex> l(lock);
+        if (!object.load(MO)) return nullptr;
+
         // Now no one can change `object`.
         // By increasing its ref count, `object` will be safe
         // until the new holder (i.e., caller) is destructed.
