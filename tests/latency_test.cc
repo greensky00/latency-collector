@@ -47,9 +47,10 @@ int MT_basic_insert_test() {
         t_hdl[i].join();
     }
 
-    printf("%s\n", lat.dump().c_str());
+    LatencyDumpDefaultImpl default_dump;
+    printf("%s\n", lat.dump(&default_dump).c_str());
 
-    printf("%s\n", global_lat->dump().c_str());
+    printf("%s\n", global_lat->dump(&default_dump).c_str());
 
     delete global_lat;
     global_lat = nullptr;
@@ -80,6 +81,12 @@ void test_function_3ms() {
     inner_function();
 }
 
+void test_function_4ms() {
+    collectFuncLatency(global_lat);
+    std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    inner_function();
+}
+
 int latency_macro_test() {
     global_lat = new LatencyCollector();
 
@@ -101,12 +108,37 @@ int latency_macro_test() {
         funcs[i]();
     }
 
-    printf("%s\n", global_lat->dump().c_str());
+    for (i=0; i<n_calls[2]+1; ++i) {
+        test_function_4ms();
+    }
+
+    LatencyDumpDefaultImpl default_dump;
 
     LatencyCollectorDumpOptions opt;
-    opt.view_type = LatencyCollectorDumpOptions::ViewType::FLAT;
-    opt.sort_by = LatencyCollectorDumpOptions::SortBy::AVG_LATENCY;
-    printf("%s\n", global_lat->dump(opt).c_str());
+    opt.view_type = LatencyCollectorDumpOptions::TREE;
+    opt.sort_by = LatencyCollectorDumpOptions::TOTAL_TIME;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    opt.sort_by = LatencyCollectorDumpOptions::AVG_LATENCY;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    opt.sort_by = LatencyCollectorDumpOptions::NUM_CALLS;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    opt.view_type = LatencyCollectorDumpOptions::FLAT;
+    opt.sort_by = LatencyCollectorDumpOptions::TOTAL_TIME;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    opt.sort_by = LatencyCollectorDumpOptions::AVG_LATENCY;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    opt.sort_by = LatencyCollectorDumpOptions::NUM_CALLS;
+    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+
+    LatencyItem chk = global_lat->getAggrItem("test_function_3ms");
+    printf("%lu, %lu\n", chk.getTotalTime(), chk.getNumCalls());
+
+    printf("%s\n", global_lat->dump(nullptr).c_str());
 
     delete global_lat;
     global_lat = nullptr;

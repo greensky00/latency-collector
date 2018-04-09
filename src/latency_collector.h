@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector
- * Version: 0.1.4
+ * Version: 0.2.0
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -53,12 +53,54 @@
 #include <string.h>
 #include <assert.h>
 
+struct LatencyCollectorDumpOptions {
+    enum SortBy {
+        NAME,
+        TOTAL_TIME,
+        NUM_CALLS,
+        AVG_LATENCY
+    };
+
+    enum ViewType {
+        TREE,
+        FLAT
+    };
+
+    LatencyCollectorDumpOptions()
+        : sort_by(SortBy::NAME)
+        , view_type(ViewType::TREE) {}
+
+    SortBy sort_by;
+    ViewType view_type;
+};
+
+class LatencyItem;
+class MapWrapper;
+class LatencyDump {
+public:
+    virtual std::string dump(MapWrapper* map_w,
+                             LatencyCollectorDumpOptions& opt) = 0;
+    virtual std::string dumpTree(MapWrapper* map_w,
+                                 LatencyCollectorDumpOptions& opt) = 0;
+
+    // To make child class be able to access internal map.
+    std::unordered_map<std::string, LatencyItem*>& getMap(MapWrapper* map_w);
+};
+
 class LatencyItem {
 public:
+    LatencyItem() {}
     LatencyItem(const std::string& _name) : statName(_name) {}
     LatencyItem(const LatencyItem& src)
-        : statName(src.statName),
-          hist(src.hist) {}
+        : statName(src.statName)
+        , hist(src.hist) {}
+
+    // this = src
+    LatencyItem& operator=(const LatencyItem& src) {
+        statName = src.statName;
+        hist = src.hist;
+        return *this;
+    }
 
     // this += rhs
     LatencyItem& operator+=(const LatencyItem& rhs) {
@@ -88,38 +130,40 @@ public:
         return hist.estimate(percentile);
     }
 
-    std::string dump(size_t max_filename_field = 0,
-                     uint64_t parent_total_time = 0,
-                     bool add_tab = true);
+    size_t getNumStacks() {
+        size_t pos = 0;
+        size_t str_size = statName.size();
+        size_t ret = 0;
+        while (pos < str_size) {
+            pos = statName.find(" ## ", pos);
+            if (pos == std::string::npos) break;
+            pos += 4;
+            ret++;
+        }
+        return ret;
+    }
+
+    std::string getActualFunction() {
+        size_t level = getNumStacks();
+        if (!level) {
+            return statName;
+        }
+
+        size_t pos = statName.rfind(" ## ");
+        return statName.substr(pos + 4);
+    }
+
+    std::string getStatName() { return statName; }
 
 private:
     std::string statName;
     Histogram hist;
 };
 
-struct LatencyCollectorDumpOptions {
-    enum class SortBy {
-        NAME,
-        TOTAL_TIME,
-        NUM_CALLS,
-        AVG_LATENCY
-    };
-
-    enum class ViewType {
-        TREE,
-        FLAT
-    };
-
-    LatencyCollectorDumpOptions()
-        : sort_by(SortBy::NAME),
-          view_type(ViewType::TREE)
-    { }
-
-    SortBy sort_by;
-    ViewType view_type;
-};
-
+class LatencyCollector;
 class MapWrapper {
+    friend class LatencyCollector;
+    friend class LatencyDump;
 public:
     MapWrapper() {}
     MapWrapper(const MapWrapper &src) {
@@ -168,8 +212,15 @@ public:
         return item;
     }
 
-    std::string dump(LatencyCollectorDumpOptions opt);
-    std::string dumpTree(LatencyCollectorDumpOptions opt);
+    std::string dump(LatencyDump* dump_inst, LatencyCollectorDumpOptions& opt) {
+        if (dump_inst) return dump_inst->dump(this, opt);
+        return "null dump implementation";
+    }
+
+    std::string dumpTree(LatencyDump* dump_inst, LatencyCollectorDumpOptions& opt) {
+        if (dump_inst) return dump_inst->dumpTree(this, opt);
+        return "null dump implementation";
+    }
 
     void freeAllItems() {
         for (auto& entry : map) {
@@ -181,10 +232,17 @@ private:
     std::unordered_map<std::string, LatencyItem*> map;
 };
 
+inline std::unordered_map<std::string, LatencyItem*>&
+LatencyDump::getMap(MapWrapper* map_w) {
+    return map_w->map;
+}
+
 using MapWrapperSP = ashared_ptr<MapWrapper>;
 //using MapWrapperSP = std::shared_ptr<MapWrapper>;
 
 class LatencyCollector {
+    friend class LatencyDump;
+
 public:
     LatencyCollector() {
         latestMap = MapWrapperSP(new MapWrapper());
@@ -255,6 +313,31 @@ public:
         // Update failed, ignore the given latency at this time.
     }
 
+    LatencyItem getAggrItem(const std::string& lat_name) {
+        LatencyItem ret;
+        if (lat_name.empty()) return ret;
+
+        MapWrapperSP cur_map_p = latestMap;
+        MapWrapper* cur_map = cur_map_p.get();
+
+        for (auto& entry: cur_map->map) {
+            LatencyItem *item = entry.second;
+            std::string actual_name = item->getActualFunction();
+
+            if (actual_name != lat_name) continue;
+
+            if (ret.getName().empty()) {
+                // Initialize.
+                ret = *item;
+            } else {
+                // Already exists.
+                ret += *item;
+            }
+        }
+
+        return ret;
+    }
+
     uint64_t getAvgLatency(const std::string& lat_name) {
         MapWrapperSP cur_map = latestMap;
         LatencyItem *item = cur_map->get(lat_name);
@@ -291,7 +374,19 @@ public:
         return (item) ? item->getPercentile(percentile) : 0;
     }
 
-    std::string dump(LatencyCollectorDumpOptions opt = LatencyCollectorDumpOptions());
+    std::string dump( LatencyDump* dump_inst,
+                      LatencyCollectorDumpOptions opt
+                          = LatencyCollectorDumpOptions() )
+    {
+        MapWrapperSP cur_map_p = latestMap;
+        MapWrapper* cur_map = cur_map_p.get();
+
+        if (opt.view_type == LatencyCollectorDumpOptions::TREE) {
+            return cur_map->dumpTree(dump_inst, opt);
+        } else {
+            return cur_map->dump(dump_inst, opt);
+        }
+    }
 
 private:
     static const size_t MAX_ADD_NEW_ITEM_RETRIES = 16;
