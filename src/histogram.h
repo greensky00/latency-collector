@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Histogram
- * Version: 0.1.4
+ * Version: 0.1.5
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -226,7 +226,7 @@ public:
 
     uint64_t getTotal() const { return count; }
     uint64_t getSum() const { return sum; }
-    uint64_t getAverage() const { return sum / count; }
+    uint64_t getAverage() const { return ( (count) ? (sum / count) : 0 ); }
     uint64_t getMax() const { return max; }
 
     iterator find(double percentile) {

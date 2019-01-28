@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Atomic Shared Pointer
- * Version: 0.1.1
+ * Version: 0.1.2
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -63,6 +63,14 @@ public:
         return object.load(MO) == src.object.load(MO);
     }
 
+    bool operator==(const T* src) const {
+        if (!object.load(MO)) {
+            // If current `object` is NULL,
+            return src == nullptr;
+        }
+        return object.load(MO)->ptr.load(MO) == src;
+    }
+
     void operator=(const ashared_ptr<T>& src) {
         std::lock_guard<std::mutex> l(lock);
 
@@ -80,6 +88,22 @@ public:
     T* operator->() const { return object.load(MO)->ptr.load(MO); }
     T& operator*() const { return *object.load(MO)->ptr.load(MO); }
     T* get() const { return object.load(MO)->ptr.load(MO); }
+
+    inline bool compare_exchange_strong(ashared_ptr<T>& expected,
+                                        ashared_ptr<T> src,
+                                        std::memory_order order)
+    {
+        (void)order;
+        return compare_exchange(expected, src);
+    }
+
+    inline bool compare_exchange_weak(ashared_ptr<T>& expected,
+                                      ashared_ptr<T> src,
+                                      std::memory_order order)
+    {
+        (void)order;
+        return compare_exchange(expected, src);
+    }
 
     bool compare_exchange(ashared_ptr<T>& expected, ashared_ptr<T> src) {
         // Note: it is OK that `expected` becomes outdated.
