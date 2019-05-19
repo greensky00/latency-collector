@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Histogram
- * Version: 0.1.5
+ * Version: 0.1.6
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -134,15 +134,21 @@ class Histogram {
 public:
     using iterator = HistItr;
 
-    Histogram() : count(0), sum(0), max(0) {
-        bins = new HistBin[maxBins];
-        for (size_t i=0; i<maxBins; ++i) {
+    Histogram(double base = 2.0)
+        : EXP_BASE(base)
+        , EXP_BASE_LOG( log(base) )
+        , count(0)
+        , sum(0)
+        , max(0)
+    {
+        bins = new HistBin[MAX_BINS];
+        for (size_t i=0; i<MAX_BINS; ++i) {
             bins[i] = 0;
         }
     }
 
     Histogram(const Histogram& src) {
-        bins = new HistBin[maxBins];
+        bins = new HistBin[MAX_BINS];
         *this = src;
     }
 
@@ -155,7 +161,7 @@ public:
         count = src.getTotal();
         sum = src.getSum();
         max = src.getMax();
-        for (size_t i=0; i<maxBins; ++i) {
+        for (size_t i=0; i<MAX_BINS; ++i) {
             bins[i] += src.bins[i];
         }
         return *this;
@@ -169,7 +175,7 @@ public:
             max = rhs.getMax();
         }
 
-        for (size_t i=0; i<maxBins; ++i) {
+        for (size_t i=0; i<MAX_BINS; ++i) {
             bins[i] += rhs.bins[i];
         }
 
@@ -185,11 +191,18 @@ public:
             lhs.max = rhs.getMax();
         }
 
-        for (size_t i=0; i<maxBins; ++i) {
+        for (size_t i=0; i<MAX_BINS; ++i) {
             lhs.bins[i] += rhs.bins[i];
         }
 
         return lhs;
+    }
+
+    int getIdx(uint64_t val) {
+        double log_val = (double)log((double)val) / EXP_BASE_LOG;
+        int idx_rvs = (int)log_val + 2;
+        if (idx_rvs > (int)MAX_BINS) return 0;
+        return (int)MAX_BINS - idx_rvs;
     }
 
     void add(uint64_t val) {
@@ -208,16 +221,21 @@ public:
         // so we should handle `val` == 0 as a special case (`idx` = 64),
         // that's the reason why num bins is 65.
 
-        int idx = maxBins - 1;
+        int idx = MAX_BINS - 1;
         if (val) {
+#if defined(__linux__) || defined(__APPLE__)
             idx = __builtin_clzl(val);
+
+#elif defined(WIN32) || defined(_WIN32)
+            idx = getIdx(val);
+#endif
         }
         bins[idx].fetch_add(1, std::memory_order_relaxed);
         count.fetch_add(1, std::memory_order_relaxed);
         sum.fetch_add(val, std::memory_order_relaxed);
 
         size_t num_trial = 0;
-        while (num_trial++ < max_trial &&
+        while (num_trial++ < MAX_TRIAL &&
                max.load(std::memory_order_relaxed) < val) {
             // 'max' may not be updated properly under race condition.
             max.store(val, std::memory_order_relaxed);
@@ -238,12 +256,12 @@ public:
         size_t i;
         uint64_t sum = 0;
         uint64_t total = getTotal();
-        uint64_t threshold = (double)total * rev / 100.0;
+        uint64_t threshold = (uint64_t)( (double)total * rev / 100.0 );
 
-        for (i=0; i<maxBins; ++i) {
+        for (i=0; i<MAX_BINS; ++i) {
             sum += bins[i].load(std::memory_order_relaxed);
             if (sum >= threshold) {
-                return HistItr(i, maxBins, this);
+                return HistItr(i, MAX_BINS, this);
             }
         }
         return end();
@@ -258,7 +276,7 @@ public:
         size_t i;
         uint64_t sum = 0;
         uint64_t total = getTotal();
-        uint64_t threshold = (double)total * rev / 100.0;
+        uint64_t threshold = (uint64_t)( (double)total * rev / 100.0 );
 
         if (!threshold) {
             // No samples between the given percentile and the max number.
@@ -266,38 +284,41 @@ public:
             return max;
         }
 
-        for (i=0; i<maxBins; ++i) {
+        for (i=0; i<MAX_BINS; ++i) {
             uint64_t n_entries = bins[i].load(std::memory_order_relaxed);
             sum += n_entries;
             if (sum < threshold) continue;
 
             uint64_t gap = sum - threshold;
-            uint64_t u_bound = HistItr(i, maxBins, this).getUpperBound();
-            double base = 2.0;
+            uint64_t u_bound = HistItr(i, MAX_BINS, this).getUpperBound();
+            double base = EXP_BASE;
             if (max < u_bound) {
                 base = (double)max / (u_bound / 2.0);
             }
 
-            return std::pow(base, (double)gap / n_entries) * u_bound / 2;
+            return (uint64_t)
+                   ( std::pow(base, (double)gap / n_entries) * u_bound / 2 );
         }
         return 0;
     }
 
     iterator begin() {
         size_t i;
-        for (i=0; i<maxBins; ++i) {
+        for (i=0; i<MAX_BINS; ++i) {
             if (bins[i].load(std::memory_order_relaxed)) break;
         }
-        return HistItr(i, maxBins, this);
+        return HistItr(i, MAX_BINS, this);
     }
 
     iterator end() {
-        return HistItr(maxBins, maxBins, this);
+        return HistItr(MAX_BINS, MAX_BINS, this);
     }
 
 private:
-    static const size_t maxBins = 65;
-    static const size_t max_trial = 3;
+    static const size_t MAX_BINS = 65;
+    static const size_t MAX_TRIAL = 3;
+    double EXP_BASE;
+    double EXP_BASE_LOG;
 
     HistBin* bins;
     std::atomic<uint64_t> count;

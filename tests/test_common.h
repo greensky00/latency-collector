@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Test Suite
- * Version: 0.1.45
+ * Version: 0.1.67
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -31,6 +31,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -43,14 +44,26 @@
 #include <string>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
-#include <sys/stat.h>
-#include <sys/types.h>
+
+#if defined(__linux__) || defined(__APPLE__)
+    #include <sys/stat.h>
+    #include <sys/types.h>
+#elif defined(WIN32) || defined(_WIN32)
+    #define NOMINMAX
+    #include <direct.h>
+    #include <Windows.h>
+    typedef SSIZE_T ssize_t;
+#endif
+
+#ifndef _CLM_DEFINED
+#define _CLM_DEFINED (1)
 
 #ifdef TESTSUITE_NO_COLOR
     #define _CLM_D_GRAY     ""
@@ -66,32 +79,47 @@
     #define _CLM_B_MAGENTA  ""
     #define _CLM_CYAN       ""
     #define _CLM_END        ""
+
+    #define _CLM_WHITE_FG_RED_BG    ""
 #else
-    #define _CLM_D_GRAY    "\033[1;30m"
-    #define _CLM_GREEN     "\033[32m"
-    #define _CLM_B_GREEN   "\033[1;32m"
-    #define _CLM_RED       "\033[31m"
-    #define _CLM_B_RED     "\033[1;31m"
-    #define _CLM_BROWN     "\033[33m"
-    #define _CLM_B_BROWN   "\033[1;33m"
-    #define _CLM_BLUE      "\033[34m"
-    #define _CLM_B_BLUE    "\033[1;34m"
-    #define _CLM_MAGENTA   "\033[35m"
-    #define _CLM_B_MAGENTA "\033[1;35m"
-    #define _CLM_CYAN      "\033[36m"
-    #define _CLM_END       "\033[0m"
+    #define _CLM_D_GRAY     "\033[1;30m"
+    #define _CLM_GREEN      "\033[32m"
+    #define _CLM_B_GREEN    "\033[1;32m"
+    #define _CLM_RED        "\033[31m"
+    #define _CLM_B_RED      "\033[1;31m"
+    #define _CLM_BROWN      "\033[33m"
+    #define _CLM_B_BROWN    "\033[1;33m"
+    #define _CLM_BLUE       "\033[34m"
+    #define _CLM_B_BLUE     "\033[1;34m"
+    #define _CLM_MAGENTA    "\033[35m"
+    #define _CLM_B_MAGENTA  "\033[1;35m"
+    #define _CLM_CYAN       "\033[36m"
+    #define _CLM_B_GREY     "\033[1;37m"
+    #define _CLM_END        "\033[0m"
+
+    #define _CLM_WHITE_FG_RED_BG    "\033[37;41m"
 #endif
 
-#define _CL_D_GRAY(str)    _CLM_D_GRAY  str _CLM_END
-#define _CL_GREEN(str)     _CLM_GREEN   str _CLM_END
-#define _CL_RED(str)       _CLM_RED     str _CLM_END
-#define _CL_MAGENTA(str)   _CLM_MAGENTA str _CLM_END
-#define _CL_BROWN(str)     _CLM_BROWN   str _CLM_END
-#define _CL_B_MAGENTA(str) _CLM_MAGENTA str _CLM_END
-#define _CL_CYAN(str)      _CLM_CYAN    str _CLM_END
+#define _CL_D_GRAY(str)     _CLM_D_GRAY     str _CLM_END
+#define _CL_GREEN(str)      _CLM_GREEN      str _CLM_END
+#define _CL_RED(str)        _CLM_RED        str _CLM_END
+#define _CL_B_RED(str)      _CLM_B_RED      str _CLM_END
+#define _CL_MAGENTA(str)    _CLM_MAGENTA    str _CLM_END
+#define _CL_BROWN(str)      _CLM_BROWN      str _CLM_END
+#define _CL_B_BROWN(str)    _CLM_B_BROWN    str _CLM_END
+#define _CL_B_BLUE(str)     _CLM_B_BLUE     str _CLM_END
+#define _CL_B_MAGENTA(str)  _CLM_B_MAGENTA  str _CLM_END
+#define _CL_CYAN(str)       _CLM_CYAN       str _CLM_END
+#define _CL_B_GRAY(str)     _CLM_B_GREY     str _CLM_END
+
+#define _CL_WHITE_FG_RED_BG(str)    _CLM_WHITE_FG_RED_BG    str _CLM_END
+
+#endif
 
 #define __COUT_STACK_INFO__                                                     \
        std::endl                                                                \
+    << "        time: " << _CLM_D_GRAY <<                                       \
+       TestSuite::getTimeString() << _CLM_END << "\n"                           \
     << "      thread: " << _CLM_BROWN                                           \
     << std::hex << std::setw(4) << std::setfill('0') <<                         \
        (std::hash<std::thread::id>{}( std::this_thread::get_id() ) & 0xffff)    \
@@ -116,6 +144,22 @@
     }                                                                   \
 }
 
+// exp_value != value
+#define CHK_NEQ(exp_value, value)                                       \
+{                                                                       \
+    auto _ev = (exp_value);                                             \
+    decltype(_ev) _v = (decltype(_ev))(value);                          \
+    if (_ev == _v) {                                                    \
+        std::cout                                                       \
+        << __COUT_STACK_INFO__                                          \
+        << "    value of: " _CLM_B_BLUE #value _CLM_END "\n"            \
+        << "    expected: not " _CLM_B_GREEN << _ev << _CLM_END "\n"    \
+        << "      actual: " _CLM_B_RED << _v << _CLM_END "\n";          \
+        TestSuite::failHandler();                                       \
+        return -1;                                                      \
+    }                                                                   \
+}
+
 // value == true
 #define CHK_OK(value)                                                   \
     if (!(value)) {                                                     \
@@ -128,6 +172,8 @@
         return -1;                                                      \
     }
 
+#define CHK_TRUE(value) CHK_OK(value)
+
 // value == false
 #define CHK_NOT(value)                                                  \
     if (value) {                                                        \
@@ -139,6 +185,8 @@
         TestSuite::failHandler();                                       \
         return -1;                                                      \
     }
+
+#define CHK_FALSE(value) CHK_NOT(value)
 
 // value == NULL
 #define CHK_NULL(value)                                                 \
@@ -314,14 +362,12 @@ enum class StepType {
 template<typename T>
 class TestRange {
 public:
-    TestRange() {
-        type = RangeType::NONE;
-    }
+    TestRange() : type(RangeType::NONE), begin(), end(), step() {}
 
     // Constructor for given values
     TestRange(const std::vector<T>& _array)
         : type(RangeType::ARRAY), array(_array)
-    { }
+        , begin(), end(), step() {}
 
     // Constructor for regular steps
     TestRange(T _begin, T _end, T _step, StepType _type)
@@ -336,11 +382,14 @@ public:
 
     T getEntry(size_t idx) {
         if (type == RangeType::ARRAY) {
-            return array[idx];
+            return (T)(array[idx]);
         } else if (type == RangeType::LINEAR) {
-            return begin + step * idx;
+            return (T)(begin + step * idx);
         } else if (type == RangeType::EXPONENTIAL) {
-            return begin * std::pow(step, idx);
+            ssize_t _begin = begin;
+            ssize_t _step = step;
+            ssize_t _ret = (ssize_t)( _begin * std::pow(_step, idx) );
+            return (T)(_ret);
         }
 
         return begin;
@@ -352,9 +401,9 @@ public:
         } else if (type == RangeType::LINEAR) {
             return ((end - begin) / step) + 1;
         } else if (type == RangeType::EXPONENTIAL) {
-            size_t coe = end / begin;
+            ssize_t coe = ((ssize_t)end) / ((ssize_t)begin);
             double steps_double = (double)std::log(coe) / std::log(step);
-            return steps_double + 1;
+            return (size_t)(steps_double + 1);
         }
 
         return 0;
@@ -410,8 +459,22 @@ private:
         return cur_test;
     }
 public:
+    static bool& globalMsgFlag() {
+        static bool global_msg_flag = false;
+        return global_msg_flag;
+    }
     static std::string getCurrentTestName() {
         return getTestName();
+    }
+    static bool isMsgAllowed() {
+        TestSuite* cur_test = TestSuite::getCurTest();
+        if ( cur_test &&
+             (cur_test->options.printTestMessage || cur_test->displayMsg) &&
+             !cur_test->suppressMsg ) {
+            return true;
+        }
+        if (globalMsgFlag()) return true;
+        return false;
     }
 
     static void setInfo(const char* format, ...) {
@@ -447,6 +510,8 @@ public:
         printf("        Immediately abort the test if failure happens.\n");
         printf("    --suppress-msg\n");
         printf("        Suppress test messages.\n");
+        printf("    --display-msg\n");
+        printf("        Display test messages.\n");
         printf("\n");
     }
 
@@ -491,6 +556,26 @@ public:
         return ss.str();
     }
 
+    static std::string sizeToString(uint64_t size) {
+        std::stringstream ss;
+        if (size < 1024) {
+            ss << size << " B";
+        } else if (size < 1024*1024) {
+            // K
+            double tmp = static_cast<double>(size / 1024.0);
+            ss << std::fixed << std::setprecision(1) << tmp << " KiB";
+        } else if (size < (uint64_t)1024*1024*1024) {
+            // M
+            double tmp = static_cast<double>(size / 1024.0 / 1024.0);
+            ss << std::fixed << std::setprecision(1) << tmp << " MiB";
+        } else {
+            // B
+            double tmp = static_cast<double>(size / 1024.0 / 1024.0 / 1024.0);
+            ss << std::fixed << std::setprecision(1) << tmp << " GiB";
+        }
+        return ss.str();
+    }
+
 private:
     struct TimeInfo {
         TimeInfo(std::tm* src)
@@ -499,13 +584,33 @@ private:
             , day(src->tm_mday)
             , hour(src->tm_hour)
             , min(src->tm_min)
-            , sec(src->tm_sec) {}
+            , sec(src->tm_sec)
+            , msec(0)
+            , usec(0) {}
+        TimeInfo(std::chrono::system_clock::time_point now) {
+            std::time_t raw_time = std::chrono::system_clock::to_time_t(now);
+            std::tm* lt_tm = std::localtime(&raw_time);
+            year = lt_tm->tm_year + 1900;
+            month = lt_tm->tm_mon + 1;
+            day = lt_tm->tm_mday;
+            hour = lt_tm->tm_hour;
+            min = lt_tm->tm_min;
+            sec = lt_tm->tm_sec;
+
+            size_t us_epoch = std::chrono::duration_cast
+                              < std::chrono::microseconds >
+                              ( now.time_since_epoch() ).count();
+            msec = (us_epoch / 1000) % 1000;
+            usec = us_epoch % 1000;
+        }
         int year;
         int month;
         int day;
         int hour;
         int min;
         int sec;
+        int msec;
+        int usec;
     };
 
 public:
@@ -516,6 +621,7 @@ public:
         , preserveTestFiles(false)
         , forceAbortOnFailure(false)
         , suppressMsg(false)
+        , displayMsg(false)
         , givenRange(0)
         , startTimeGlobal(std::chrono::system_clock::now())
     {
@@ -551,6 +657,11 @@ public:
                 suppressMsg = true;
             }
 
+            // Display test messages.
+            if ( !strcmp(argv[ii], "--display-msg") && !suppressMsg ) {
+                displayMsg = true;
+            }
+
             // Help
             if ( !strcmp(argv[ii], "-h") ||
                  !strcmp(argv[ii], "--help") ) {
@@ -564,7 +675,8 @@ public:
         std::chrono::time_point<std::chrono::system_clock> cur_time =
                 std::chrono::system_clock::now();;
         std::chrono::duration<double> elapsed = cur_time - startTimeGlobal;
-        std::string time_str = usToString(elapsed.count() * 1000000);
+        std::string time_str = usToString
+                               ( (uint64_t)(elapsed.count() * 1000000) );
 
         printf(_CL_GREEN("%zu") " tests passed", cntPass);
         if (cntFail) {
@@ -576,10 +688,7 @@ public:
 
     // === Helper functions ====================================
     static std::string getTestFileName(const std::string& prefix) {
-        auto now = std::chrono::system_clock::now();
-        std::time_t raw_time = std::chrono::system_clock::to_time_t(now);
-        std::tm* lt_tm = std::localtime(&raw_time);
-        TimeInfo lt(lt_tm);
+        TimeInfo lt(std::chrono::system_clock::now());
         (void)lt;
 
         char time_char[64];
@@ -592,18 +701,72 @@ public:
         return ret;
     }
 
+    static std::string getTimeString() {
+        TimeInfo lt(std::chrono::system_clock::now());
+        char time_char[64];
+        sprintf(time_char, "%04d-%02d-%02d %02d:%02d:%02d.%03d%03d",
+                lt.year, lt.month, lt.day, lt.hour, lt.min, lt.sec, lt.msec, lt.usec);
+        return time_char;
+    }
+    static std::string getTimeStringShort() {
+        TimeInfo lt(std::chrono::system_clock::now());
+        char time_char[64];
+        sprintf(time_char, "%02d:%02d.%03d %03d",
+                lt.min, lt.sec, lt.msec, lt.usec);
+        return time_char;
+    }
+    static std::string getTimeStringPlain() {
+        TimeInfo lt(std::chrono::system_clock::now());
+        char time_char[64];
+        sprintf(time_char, "%02d%02d_%02d%02d%02d",
+                lt.month, lt.day, lt.hour, lt.min, lt.sec);
+        return time_char;
+    }
+
     static int mkdir(const std::string& path) {
+#if defined(__linux__) || defined(__APPLE__)
         struct stat st;
         if (stat(path.c_str(), &st) != 0) {
             return ::mkdir(path.c_str(), 0755);
         }
+
+#elif defined(WIN32) || defined(_WIN32)
+        if (GetFileAttributes(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            return _mkdir(path.c_str());
+        }
+#endif
         return 0;
     }
     static int copyfile(const std::string& src,
                         const std::string& dst) {
+#if defined(__linux__) || defined(__APPLE__)
         std::string cmd = "cp -R " + src + " " + dst;
         int rc = ::system(cmd.c_str());
         return rc;
+
+#elif defined(WIN32) || defined(_WIN32)
+        // TODO: `xcopy` only copies folders, not files.
+        std::string cmd = "xcopy /e /i /h " + src + " " + dst + " > NUL";
+        int rc = ::system(cmd.c_str());
+        return rc;
+#endif
+    }
+    static int remove(const std::string& path) {
+        int rc = ::remove(path.c_str());
+        return rc;
+    }
+    static bool exist(const std::string& path) {
+#if defined(__linux__) || defined(__APPLE__)
+        struct stat st;
+        int result = stat(path.c_str(), &st);
+        return (result == 0);
+
+#elif defined(WIN32) || defined(_WIN32)
+        if (GetFileAttributes(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            return true;
+        }
+        return false;
+#endif
     }
 
     enum TestPosition {
@@ -619,11 +782,41 @@ public:
                cur_test->options.preserveTestFiles ) ) return;
 
         int r;
+#if defined(__linux__) || defined(__APPLE__)
         std::string command = "rm -rf ";
         command += prefix;
         command += "*";
         r = system(command.c_str());
         (void)r;
+
+#elif defined(WIN32) || defined(_WIN32)
+        std::string command = "del /s /f /q ";
+        command += prefix;
+        command += "* > NUL";
+        r = system(command.c_str());
+        (void)r;
+
+        // Windows `del` operation cannot delete folders.
+        // Just in case if there are any folders.
+        WIN32_FIND_DATA filedata;
+        HANDLE hfind;
+        std::string query_str = prefix + "*";
+        hfind = FindFirstFile(query_str.c_str(), &filedata);
+        while (hfind != INVALID_HANDLE_VALUE) {
+            std::string f_name(filedata.cFileName);
+            size_t f_name_pos = f_name.find(prefix);
+            if (f_name_pos != std::string::npos) {
+                command = "rmdir /s /q " + f_name + " > NUL";
+                r = system(command.c_str());
+                (void)r;
+            }
+
+            if (!FindNextFile(hfind, &filedata)) {
+                FindClose(hfind);
+                hfind = INVALID_HANDLE_VALUE;
+            }
+        }
+#endif
     }
 
     static void setResultMessage(const std::string& msg) {
@@ -638,9 +831,10 @@ public:
     static size_t _msg(const char* format, ...) {
         size_t cur_len = 0;
         TestSuite* cur_test = TestSuite::getCurTest();
-        if ( cur_test &&
-             cur_test->options.printTestMessage &&
-             !cur_test->suppressMsg ) {
+        if ( ( cur_test &&
+               (cur_test->options.printTestMessage || cur_test->displayMsg) &&
+               !cur_test->suppressMsg ) ||
+             globalMsgFlag() ) {
             va_list args;
             va_start(args, format);
             cur_len += vprintf(format, args);
@@ -648,6 +842,45 @@ public:
         }
         return cur_len;
     }
+    static size_t _msgt(const char* format, ...) {
+        size_t cur_len = 0;
+        TestSuite* cur_test = TestSuite::getCurTest();
+        if ( ( cur_test &&
+               (cur_test->options.printTestMessage || cur_test->displayMsg) &&
+               !cur_test->suppressMsg ) ||
+             globalMsgFlag() ) {
+            std::cout << _CLM_D_GRAY
+                      << getTimeStringShort() << _CLM_END << "] ";
+            va_list args;
+            va_start(args, format);
+            cur_len += vprintf(format, args);
+            va_end(args);
+        }
+        return cur_len;
+    }
+
+    class Msg {
+    public:
+        Msg() {}
+
+        template<typename T>
+        inline Msg& operator<<(const T& data) {
+            if (TestSuite::isMsgAllowed()) {
+                std::cout << data;
+            }
+            return *this;
+        }
+
+        using MyCout = std::basic_ostream< char, std::char_traits<char> >;
+        typedef MyCout& (*EndlFunc)(MyCout&);
+
+        Msg& operator<<(EndlFunc func) {
+            if (TestSuite::isMsgAllowed()) {
+                func(std::cout);
+            }
+            return *this;
+        }
+    };
 
     static void sleep_us(size_t us, const std::string& msg = std::string()) {
         if (!msg.empty()) TestSuite::_msg("%s (%zu us)\n", msg.c_str(), us);
@@ -670,7 +903,10 @@ public:
         return ops * 1000000.0 / elapsed_us;
     }
     static std::string throughputStr(uint64_t ops, uint64_t elapsed_us) {
-        return countToString(ops * 1000000.0 / elapsed_us);
+        return countToString(ops * 1000000 / elapsed_us);
+    }
+    static std::string sizeThroughputStr(uint64_t size_byte, uint64_t elapsed_us) {
+        return sizeToString(size_byte * 1000000 / elapsed_us);
     }
 
     // === Timer things ====================================
@@ -682,11 +918,22 @@ public:
         Timer(size_t _duration_ms) : duration_ms(_duration_ms) {
             reset();
         }
+        inline bool timeout() { return timeover(); }
         bool timeover() {
             auto cur = std::chrono::system_clock::now();
             std::chrono::duration<double> elapsed = cur - start;
             if (duration_ms < elapsed.count() * 1000) return true;
             return false;
+        }
+        uint64_t getTimeSec() {
+            auto cur = std::chrono::system_clock::now();
+            std::chrono::duration<double> elapsed = cur - start;
+            return (uint64_t)(elapsed.count());
+        }
+        uint64_t getTimeMs() {
+            auto cur = std::chrono::system_clock::now();
+            std::chrono::duration<double> elapsed = cur - start;
+            return (uint64_t)(elapsed.count() * 1000);
         }
         uint64_t getTimeUs() {
             auto cur = std::chrono::system_clock::now();
@@ -696,7 +943,11 @@ public:
         void reset() {
             start = std::chrono::system_clock::now();
         }
-        void reset(size_t _duration_ms) {
+        void resetSec(size_t _duration_sec) {
+            duration_ms = _duration_sec * 1000;
+            reset();
+        }
+        void resetMs(size_t _duration_ms) {
             duration_ms = _duration_ms;
             reset();
         }
@@ -726,7 +977,10 @@ public:
 
             double exp = opsPerSec * elapsed.count();
             if (numOpsDone < exp) {
-                return std::min(maxOpsPerBatch, (uint64_t)exp - numOpsDone);
+                if (maxOpsPerBatch) {
+                    return std::min(maxOpsPerBatch, (uint64_t)exp - numOpsDone);
+                }
+                return (uint64_t)exp - numOpsDone;
             }
             return 0;
         }
@@ -741,6 +995,7 @@ public:
     };
 
     // === Progress things ==================================
+    // Progress that knows the maximum value.
     class Progress {
     public:
         Progress(uint64_t _num,
@@ -784,6 +1039,44 @@ public:
         std::string unit;
     };
 
+    // Progress that doesn't know the maximum value.
+    class UnknownProgress {
+    public:
+        UnknownProgress(const std::string& _comment = std::string(),
+                        const std::string& _unit = std::string())
+            : curValue(0)
+            , timer(0)
+            , lastPrintTimeUs(timer.getTimeUs())
+            , comment(_comment)
+            , unit(_unit) {}
+        void update(uint64_t cur) {
+            curValue = cur;
+            uint64_t curTimeUs = timer.getTimeUs();
+            if ( curTimeUs - lastPrintTimeUs > 50000 ||
+                 cur == 0 ) {
+                // Print every 0.05 sec (20 Hz).
+                lastPrintTimeUs = curTimeUs;
+                std::string _comment =
+                    (comment.empty()) ? "" : comment + ": ";
+                std::string _unit =
+                    (unit.empty()) ? "" : unit + " ";
+
+                _msg("\r%s%ld %s", _comment.c_str(), curValue, _unit.c_str());
+                fflush(stdout);
+            }
+        }
+        void done() {
+            _msg("\n");
+            fflush(stdout);
+        }
+    private:
+        uint64_t curValue;
+        Timer timer;
+        uint64_t lastPrintTimeUs;
+        std::string comment;
+        std::string unit;
+    };
+
     // === Displayer things ==================================
     class Displayer {
     public:
@@ -793,7 +1086,7 @@ public:
             , colWidth(num_cols, 20)
             , context(num_raws, std::vector<std::string>(num_cols)) {}
         void init() {
-            for (size_t ii=0; ii<numRaws; ++ii) printf("\n");
+            for (size_t ii=0; ii<numRaws; ++ii) _msg("\n");
         }
         void setWidth(std::vector<size_t>& src) {
             size_t num_src = src.size();
@@ -818,13 +1111,13 @@ public:
             context[raw_idx][col_idx] = info_buf;
         }
         void print() {
-            printf("\033[%zuA", numRaws);
+            _msg("\033[%zuA", numRaws);
             for (size_t ii=0; ii<numRaws; ++ii) {
                 std::stringstream ss;
                 for (size_t jj=0; jj<numCols; ++jj) {
                     ss << std::setw(colWidth[jj]) << context[ii][jj];
                 }
-                printf("\r%s\n", ss.str().c_str());
+                _msg("\r%s\n", ss.str().c_str());
             }
         }
     private:
@@ -832,6 +1125,33 @@ public:
         size_t numCols;
         std::vector<size_t> colWidth;
         std::vector< std::vector< std::string > > context;
+    };
+
+    // === Gc things ====================================
+    template<typename T, typename T2 = T>
+    class GcVar {
+    public:
+        GcVar(T& _src, T2 _to)
+            : src(_src), to(_to) {}
+        ~GcVar() {
+            // GC by value.
+            src = to;
+        }
+    private:
+        T& src;
+        T2 to;
+    };
+
+    class GcFunc {
+    public:
+        GcFunc(std::function<void()> _func)
+            : func(_func) {}
+        ~GcFunc() {
+            // GC by function.
+            func();
+        }
+    private:
+        std::function<void()> func;
     };
 
     // === Thread things ====================================
@@ -849,31 +1169,38 @@ private:
 
 public:
     struct ThreadHolder {
+        ThreadHolder() : tid(nullptr), handler(nullptr) {}
         ThreadHolder(std::thread* _tid, ThreadExitHandler _handler)
             : tid(_tid), handler(_handler) {}
         ThreadHolder(ThreadArgs* u_args,
                      ThreadFunc t_func,
                      ThreadExitHandler t_handler)
-            : handler(t_handler)
-        {
+            : tid(nullptr), handler(nullptr)
+        { spawn(u_args, t_func, t_handler); }
+
+        ~ThreadHolder() { join(true); }
+
+        void spawn(ThreadArgs* u_args,
+                   ThreadFunc t_func,
+                   ThreadExitHandler t_handler) {
+            if (tid) return;
+            handler = t_handler;
             args.userArgs = u_args;
             args.func = t_func;
             tid = new std::thread(spawnThread, &args);
         }
-        ~ThreadHolder() {
+
+        void join(bool force = false) {
             if (!tid) return;
             if (tid->joinable()) {
-                handler(args.userArgs);
+                if (force) {
+                    // Force kill.
+                    handler(args.userArgs);
+                }
                 tid->join();
             }
             delete tid;
             tid = nullptr;
-        }
-        void join() {
-            if (!tid) return;
-            if (tid->joinable()) {
-                tid->join();
-            }
         }
         int getResult() const { return args.rc; }
         std::thread* tid;
@@ -991,7 +1318,8 @@ private:
 
     void readyTest(const std::string& test_name) {
         printf("[ " "...." " ] %s\n", test_name.c_str());
-        if (options.printTestMessage && !suppressMsg) {
+        if ( (options.printTestMessage || displayMsg) &&
+             !suppressMsg ) {
             printf(_CL_D_GRAY("   === TEST MESSAGE (BEGIN) ===\n"));
         }
         fflush(stdout);
@@ -1006,7 +1334,8 @@ private:
         std::chrono::time_point<std::chrono::system_clock> cur_time =
                 std::chrono::system_clock::now();;
         std::chrono::duration<double> elapsed = cur_time - startTimeLocal;
-        std::string time_str = usToString(elapsed.count() * 1000000);
+        std::string time_str = usToString
+                               ( (uint64_t)(elapsed.count() * 1000000) );
 
         char msg_buf[1024];
         std::string res_msg = TestSuite::getResMsg();
@@ -1020,7 +1349,8 @@ private:
             printf("[ " _CL_RED("FAIL") " ] %s\n", msg_buf);
             cntFail++;
         } else {
-            if (options.printTestMessage && !suppressMsg) {
+            if ( (options.printTestMessage || displayMsg) &&
+                 !suppressMsg ) {
                 printf(_CL_D_GRAY("   === TEST MESSAGE (END) ===\n"));
             } else {
                 // Move a line up.
@@ -1035,9 +1365,7 @@ private:
 
         if ( result != 0 &&
              (options.abortOnFailure || forceAbortOnFailure) ) {
-            bool abort_on_failure = false;
-            (void)abort_on_failure;
-            assert(abort_on_failure);
+            abort();
         }
         getTestName().clear();
     }
@@ -1049,6 +1377,7 @@ private:
     bool preserveTestFiles;
     bool forceAbortOnFailure;
     bool suppressMsg;
+    bool displayMsg;
     int64_t givenRange;
     // Start time of each test.
     std::chrono::time_point<std::chrono::system_clock> startTimeLocal;
@@ -1231,6 +1560,4 @@ void TestArgsBase::testAllInternal(size_t depth) {
 #define TEST_SUITE_CLEANUP_PATH()                       \
     TestSuite::clearTestFile( _ts_auto_prefiix_,        \
                               TestSuite::END_OF_TEST );
-
-
 

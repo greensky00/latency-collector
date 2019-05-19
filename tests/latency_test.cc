@@ -6,17 +6,17 @@
 
 #include <stdio.h>
 
-struct test_args {
+struct test_args : TestSuite::ThreadArgs {
     LatencyCollector* lat;
 };
 
-LatencyCollector *global_lat;
+LatencyCollector* global_lat;
 
-void* insert_thread(void *voidargs)
+int insert_thread(TestSuite::ThreadArgs* t_args)
 {
     collectFuncLatency(global_lat);
 
-    test_args *args = (test_args*)voidargs;
+    test_args *args = (test_args*)t_args;
     size_t n = 1024 * 1;
 
     for (size_t i=0; i<n; ++i) {
@@ -25,7 +25,7 @@ void* insert_thread(void *voidargs)
         args->lat->addLatency(std::to_string(item_no), latency);
     }
 
-    return nullptr;
+    return 0;
 }
 
 int MT_basic_insert_test() {
@@ -34,13 +34,13 @@ int MT_basic_insert_test() {
     size_t i;
     size_t n_threads = 8;
 
-    std::vector<std::thread> t_hdl(n_threads);
-    test_args args;
     LatencyCollector lat;
 
+    std::vector<TestSuite::ThreadHolder> t_hdl(n_threads);
+    std::vector<test_args> args(n_threads);
     for (i=0; i<n_threads; ++i) {
-        args.lat = &lat;
-        t_hdl[i] = std::thread(insert_thread, &args);
+        args[i].lat = &lat;
+        t_hdl[i].spawn(&args[i], insert_thread, nullptr);
     }
 
     for (i=0; i<n_threads; ++i){
@@ -48,9 +48,9 @@ int MT_basic_insert_test() {
     }
 
     LatencyDumpDefaultImpl default_dump;
-    printf("%s\n", lat.dump(&default_dump).c_str());
-
-    printf("%s\n", global_lat->dump(&default_dump).c_str());
+    TestSuite::Msg msg_stream;
+    msg_stream << lat.dump(&default_dump) << std::endl;
+    msg_stream << global_lat->dump(&default_dump) << std::endl;
 
     delete global_lat;
     global_lat = nullptr;
@@ -113,32 +113,35 @@ int latency_macro_test() {
     }
 
     LatencyDumpDefaultImpl default_dump;
+    TestSuite::Msg msg_stream;
 
     LatencyCollectorDumpOptions opt;
     opt.view_type = LatencyCollectorDumpOptions::TREE;
     opt.sort_by = LatencyCollectorDumpOptions::TOTAL_TIME;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     opt.sort_by = LatencyCollectorDumpOptions::AVG_LATENCY;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     opt.sort_by = LatencyCollectorDumpOptions::NUM_CALLS;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     opt.view_type = LatencyCollectorDumpOptions::FLAT;
     opt.sort_by = LatencyCollectorDumpOptions::TOTAL_TIME;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     opt.sort_by = LatencyCollectorDumpOptions::AVG_LATENCY;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     opt.sort_by = LatencyCollectorDumpOptions::NUM_CALLS;
-    printf("%s\n", global_lat->dump(&default_dump, opt).c_str());
+    msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
     LatencyItem chk = global_lat->getAggrItem("test_function_3ms");
-    printf("%lu, %lu\n", chk.getTotalTime(), chk.getNumCalls());
+    msg_stream << "test_function_3ms: "
+               << "total " << chk.getTotalTime() << " us, "
+               << chk.getNumCalls() << " calls" << std::endl;
 
-    printf("%s\n", global_lat->dump(nullptr).c_str());
+    msg_stream << global_lat->dump(nullptr) << std::endl;
 
     delete global_lat;
     global_lat = nullptr;
@@ -146,9 +149,8 @@ int latency_macro_test() {
     return 0;
 }
 
-int main()
-{
-    TestSuite test;
+int main(int argc, char** argv) {
+    TestSuite test(argc, argv);;
 
     test.options.printTestMessage = true;
     test.doTest("multi thread test", MT_basic_insert_test);
