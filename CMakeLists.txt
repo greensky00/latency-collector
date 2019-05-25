@@ -14,6 +14,7 @@ message(STATUS "Build type: " ${CMAKE_BUILD_TYPE})
 
 set(ROOT_SRC ${PROJECT_SOURCE_DIR}/src)
 set(TEST_DIR ${PROJECT_SOURCE_DIR}/tests)
+set(EXAMPLE_DIR ${PROJECT_SOURCE_DIR}/examples)
 
 # Includes
 include_directories(BEFORE ./)
@@ -71,3 +72,7 @@ set(LATENCY_TEST
     ${TEST_DIR}/dummy.cc)
 add_executable(latency_test ${LATENCY_TEST})
 
+
+# === Examples ===
+set(QUICK_START ${EXAMPLE_DIR}/quick_start.cc)
+add_executable(quick_start ${QUICK_START})

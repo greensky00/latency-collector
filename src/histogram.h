@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Histogram
- * Version: 0.1.6
+ * Version: 0.1.7
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -149,6 +149,7 @@ public:
 
     Histogram(const Histogram& src) {
         bins = new HistBin[MAX_BINS];
+        // It will invoke `operator=()` below.
         *this = src;
     }
 
@@ -158,11 +159,13 @@ public:
 
     // this = src
     Histogram& operator=(const Histogram& src) {
+        EXP_BASE = src.EXP_BASE;
+        EXP_BASE_LOG = src.EXP_BASE_LOG;
         count = src.getTotal();
         sum = src.getSum();
         max = src.getMax();
         for (size_t i=0; i<MAX_BINS; ++i) {
-            bins[i] += src.bins[i];
+            bins[i].store( src.bins[i].load() );
         }
         return *this;
     }
