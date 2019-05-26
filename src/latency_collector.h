@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector
- * Version: 0.2.1
+ * Version: 0.2.2
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
@@ -163,7 +163,7 @@ public:
                 ret.insert( std::make_pair(itr.getUpperBound(), cnt) );
             }
         }
-        return std::move(ret);
+        return ret;
     }
 
 private:
