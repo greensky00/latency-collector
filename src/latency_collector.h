@@ -48,10 +48,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <assert.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <string.h>
-#include <assert.h>
 
 struct LatencyCollectorDumpOptions {
     enum SortBy {
@@ -68,7 +68,8 @@ struct LatencyCollectorDumpOptions {
 
     LatencyCollectorDumpOptions()
         : sort_by(SortBy::NAME)
-        , view_type(ViewType::TREE) {}
+        , view_type(ViewType::TREE)
+        {}
 
     SortBy sort_by;
     ViewType view_type;
@@ -79,9 +80,9 @@ class MapWrapper;
 class LatencyDump {
 public:
     virtual std::string dump(MapWrapper* map_w,
-                             LatencyCollectorDumpOptions& opt) = 0;
+                             const LatencyCollectorDumpOptions& opt) = 0;
     virtual std::string dumpTree(MapWrapper* map_w,
-                                 LatencyCollectorDumpOptions& opt) = 0;
+                                 const LatencyCollectorDumpOptions& opt) = 0;
 
     // To make child class be able to access internal map.
     std::unordered_map<std::string, LatencyItem*>& getMap(MapWrapper* map_w);
@@ -110,7 +111,8 @@ public:
 
     // returning lhs + rhs
     friend LatencyItem operator+(LatencyItem lhs,
-                                 const LatencyItem& rhs) {
+                                 const LatencyItem& rhs)
+    {
         lhs.hist += rhs.hist;
         return lhs;
     }
@@ -120,17 +122,14 @@ public:
     }
 
     void addLatency(uint64_t latency) { hist.add(latency); }
-
     uint64_t getAvgLatency() const { return hist.getAverage(); }
     uint64_t getTotalTime() const { return hist.getSum(); }
     uint64_t getNumCalls() const { return hist.getTotal(); }
     uint64_t getMaxLatency() const { return hist.getMax(); }
     uint64_t getMinLatency() { return hist.estimate(1); }
-    uint64_t getPercentile(double percentile) {
-        return hist.estimate(percentile);
-    }
+    uint64_t getPercentile(double percentile) { return hist.estimate(percentile); }
 
-    size_t getNumStacks() {
+    size_t getNumStacks() const {
         size_t pos = 0;
         size_t str_size = statName.size();
         size_t ret = 0;
@@ -143,7 +142,7 @@ public:
         return ret;
     }
 
-    std::string getActualFunction() {
+    std::string getActualFunction() const {
         size_t level = getNumStacks();
         if (!level) {
             return statName;
@@ -153,7 +152,19 @@ public:
         return statName.substr(pos + 4);
     }
 
-    std::string getStatName() { return statName; }
+    std::string getStatName() const { return statName; }
+
+    std::map<double, uint64_t> dumpHistogram() const {
+        std::map<double, uint64_t> ret;
+        for (auto& entry: hist) {
+            HistItr& itr = entry;
+            uint64_t cnt = itr.getCount();
+            if (cnt) {
+                ret.insert( std::make_pair(itr.getUpperBound(), cnt) );
+            }
+        }
+        return std::move(ret);
+    }
 
 private:
     std::string statName;
@@ -212,12 +223,14 @@ public:
         return item;
     }
 
-    std::string dump(LatencyDump* dump_inst, LatencyCollectorDumpOptions& opt) {
+    std::string dump(LatencyDump* dump_inst,
+                     const LatencyCollectorDumpOptions& opt) {
         if (dump_inst) return dump_inst->dump(this, opt);
         return "null dump implementation";
     }
 
-    std::string dumpTree(LatencyDump* dump_inst, LatencyCollectorDumpOptions& opt) {
+    std::string dumpTree(LatencyDump* dump_inst,
+                         const LatencyCollectorDumpOptions& opt) {
         if (dump_inst) return dump_inst->dumpTree(this, opt);
         return "null dump implementation";
     }
@@ -233,7 +246,8 @@ private:
 };
 
 inline std::unordered_map<std::string, LatencyItem*>&
-LatencyDump::getMap(MapWrapper* map_w) {
+    LatencyDump::getMap(MapWrapper* map_w)
+{
     return map_w->map;
 }
 
@@ -375,7 +389,7 @@ public:
     }
 
     std::string dump( LatencyDump* dump_inst,
-                      LatencyCollectorDumpOptions opt
+                      const LatencyCollectorDumpOptions& opt
                           = LatencyCollectorDumpOptions() )
     {
         MapWrapperSP cur_map_p = latestMap;

@@ -46,7 +46,7 @@ class HistItr {
 public:
     HistItr() : idx(0), maxBins(0), owner(nullptr) { }
 
-    HistItr(size_t _idx, size_t _max_bins, Histogram* _owner)
+    HistItr(size_t _idx, size_t _max_bins, const Histogram* _owner)
         : idx(_idx), maxBins(_max_bins), owner(_owner) {}
 
     // ++A
@@ -125,7 +125,7 @@ public:
 private:
     size_t idx;
     size_t maxBins;
-    Histogram* owner;
+    const Histogram* owner;
 };
 
 class Histogram {
@@ -305,7 +305,7 @@ public:
         return 0;
     }
 
-    iterator begin() {
+    iterator begin() const {
         size_t i;
         for (i=0; i<MAX_BINS; ++i) {
             if (bins[i].load(std::memory_order_relaxed)) break;
@@ -313,7 +313,7 @@ public:
         return HistItr(i, MAX_BINS, this);
     }
 
-    iterator end() {
+    iterator end() const {
         return HistItr(MAX_BINS, MAX_BINS, this);
     }
 

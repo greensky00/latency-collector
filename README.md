@@ -1,7 +1,7 @@
 
 Latency-Collector
 ---
-Easy-to-use latency collecting library for C++.
+Easy-to-use latency collecting library for C++ programs.
 
 
 Author
@@ -40,8 +40,12 @@ How to dump (using the default dump implementation):
 ```C++
 #include "latency_dump.h"
 
-LatencyDumpDefaultImpl default_dump;
-std::cout << lat_clt.dump(&default_dump) << std::endl;
+int main() {
+    // ...
+    LatencyDumpDefaultImpl default_dump;
+    std::cout << lat_clt.dump(&default_dump) << std::endl;
+    // ...
+}
 ```
 
 It will print out the results as follows:

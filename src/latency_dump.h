@@ -40,7 +40,7 @@
 class LatencyDumpDefaultImpl : public LatencyDump {
 public:
     std::string dump(MapWrapper* map_w,
-                     LatencyCollectorDumpOptions& opt) {
+                     const LatencyCollectorDumpOptions& opt) {
         std::stringstream ss;
         if (!map_w->getSize()) {
             ss << "# stats: " << map_w->getSize() << std::endl;
@@ -135,7 +135,7 @@ public:
     }
 
     std::string dumpTree(MapWrapper* map_w,
-                         LatencyCollectorDumpOptions& opt) {
+                         const LatencyCollectorDumpOptions& opt) {
         std::stringstream ss;
         DumpItem root;
 

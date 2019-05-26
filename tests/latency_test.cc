@@ -60,7 +60,8 @@ int MT_basic_insert_test() {
 
 void inner_function() {
     collectFuncLatency(global_lat);
-    std::this_thread::sleep_for(std::chrono::microseconds(1));
+    std::this_thread::sleep_for
+        ( std::chrono::milliseconds( (std::rand() % 10) + 1) );
 }
 
 void test_function_1ms() {
@@ -136,10 +137,18 @@ int latency_macro_test() {
     opt.sort_by = LatencyCollectorDumpOptions::NUM_CALLS;
     msg_stream << global_lat->dump(&default_dump, opt) << std::endl;
 
-    LatencyItem chk = global_lat->getAggrItem("test_function_3ms");
-    msg_stream << "test_function_3ms: "
-               << "total " << chk.getTotalTime() << " us, "
-               << chk.getNumCalls() << " calls" << std::endl;
+    for ( const std::string& item_name: { std::string("test_function_3ms"),
+                                          std::string("inner_function") } ) {
+        LatencyItem chk = global_lat->getAggrItem(item_name);
+        msg_stream << item_name << ": "
+                   << "total " << chk.getTotalTime() << " us, "
+                   << chk.getNumCalls() << " calls" << std::endl;
+        std::map<double, uint64_t> hist = chk.dumpHistogram();
+        for (auto& entry: hist) {
+            msg_stream << "less than " << entry.first << ": "
+                       << entry.second << std::endl;
+        }
+    }
 
     msg_stream << global_lat->dump(nullptr) << std::endl;
 
