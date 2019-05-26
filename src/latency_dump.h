@@ -5,7 +5,7 @@
  * https://github.com/greensky00
  *
  * Latency Collector Dump Module
- * Version: 0.2.0
+ * Version: 0.2.1
  *
  * Permission is hereby granted, free of charge, to any person
  * obtaining a copy of this software and associated documentation
